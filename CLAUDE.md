@@ -1,0 +1,61 @@
+# CLAUDE.md
+
+Port de ClanBomber a Rust + wgpu. Primero paridad de juego con el original, después extras
+(partículas por compute shader, reescalado/sprites con IA).
+
+## Comandos
+
+```bash
+cargo run -p cb-game [assets/maps/X.map]   # sin argumento carga Arena.map; Esc cierra
+cargo test                                  # incluye parseo de los 33 mapas
+cargo fmt
+```
+
+## Estructura
+
+- `crates/core` (`cb-core`): lógica pura, **sin dependencias gráficas ni de ventana**. Determinista, paso
+  fijo (`TICK_HZ` = 60). Mapa (`map.rs`) y `World::step` (`sim.rs`).
+- `crates/render` (`cb-render`): wgpu. Batcher de quads en resolución virtual 800x600 con letterbox,
+  texturas (`load_texture`), hojas de sprites (`Sheet`), shader en `quad.wgsl`.
+- `crates/game` (`cb-game`): binario winit. Loop con acumulador de tiempo → `World::step` a 60 Hz → dibujo.
+- `assets/maps`, `assets/pics`: copiados del fork de referencia (ver abajo).
+
+## Referencia: el original
+
+Especificación ejecutable del comportamiento: el fork C++ `viti95/ClanBomber2` clonado en
+`/home/oriaj/c/clanbomber2/src` (compilado en `.../clanbomber2/dist/bin/clanbomber2`).
+Ante cualquier duda de reglas (colisión, velocidades, explosiones, extras), **leer ese código y replicarlo**
+antes de inventar. Cita el archivo del original en el comentario cuando copies una constante o regla.
+
+Datos útiles del original:
+- Mapa 17x13 tiles de 40 px; se dibuja con offset (60, 40) en el lienzo de 800x600.
+- Enum de dirección: `DOWN=0, LEFT=1, UP=2, RIGHT=3`. Addons de flecha en `maptile_addons.png` = `dir+1`;
+  hielo = 0, trampa = 7. `maptiles.png`: 4 celdas por tema (suelo, muro, caja, caja+1).
+- Formato `.map`: línea de autor, entero de jugadores, 13 filas de 17 caracteres.
+  `' '` suelo, `*` muro, `+` caja, `R` caja con prob. 2/3, `S` hielo, `<>^v` flechas, `o` trampa,
+  `0`-`7` spawns, resto = fuera del mapa.
+
+## Decisiones
+
+- **Replicar el movimiento del original tal cual** (píxeles enteros, velocidades enteras, snap a la rejilla)
+  para poder comparar contra el fork. Limpiar/generalizar solo después de tener paridad.
+- La simulación nunca toca wgpu/winit ni el reloj de pared; el render solo lee `World`.
+- El C++ propio anterior (`/home/oriaj/c/clanbomber_sdl3`) se estancó por refactorizar la arquitectura antes de
+  tener el contenido del juego. No repetir: paridad de contenido primero.
+
+## Notas de wgpu 30
+
+La API difiere de la mayoría de tutoriales: `Queue::present(frame)`, `get_current_texture()` devuelve un
+enum (`CurrentSurfaceTexture`), `VertexState.buffers` es `&[Option<_>]`, `bind_group_layouts` es
+`&[Option<&_>]`, `Instance::new_without_display_handle()`. Ante errores de compilación, mirar el código en
+`~/.cargo/registry/src/*/wgpu-30.*`.
+
+## Convenciones
+
+- Código, comentarios y commits en español; identificadores en inglés.
+- Commits temáticos y pequeños (un tema por commit). Licencia del proyecto: GPL-2.0-or-later.
+
+## Hoja de ruta
+
+1. ~~Mapa con texturas~~ 2. Bomber (movimiento + colisión + teclado + sprites) 3. Bombas y explosiones
+4. Extras y enfermedades, hielo/flechas/trampas 5. Menús, IA, sonido 6. Partículas (compute), sprites IA.
