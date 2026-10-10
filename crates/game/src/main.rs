@@ -4,6 +4,7 @@ mod credits;
 mod draw;
 mod help;
 mod intro;
+mod joystick;
 mod map_editor;
 mod map_select;
 mod menu;
@@ -30,6 +31,7 @@ use credits::Credits;
 use draw::{Player, Ui};
 use help::Help;
 use intro::Intro;
+use joystick::Joysticks;
 use map_editor::MapEditor;
 use map_select::MapSelect;
 use menu::{Id, Menu, Outcome};
@@ -62,6 +64,15 @@ const KEYMAPS: [[KeyCode; 5]; 3] = [
     ],
 ];
 
+/// Quién maneja a un bomber (la IA va aparte, en `World::ais`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Control {
+    Keys(usize),
+    Pad(usize),
+    /// Sin controlador implementado (ratón): se queda quieto.
+    None,
+}
+
 enum Screen {
     Intro(Intro),
     Menu,
@@ -80,8 +91,9 @@ struct App {
     menu: Menu,
     world: Option<World>,
     players: Vec<Player>,
-    /// Teclado que gobierna a cada bomber del mundo (`None`: sin controlador implementado).
-    keymaps: Vec<Option<usize>>,
+    /// Qué gobierna a cada bomber del mundo.
+    controls: Vec<Control>,
+    joysticks: Joysticks,
     assets: Option<Assets>,
     ui: Ui,
     keys: HashSet<KeyCode>,
@@ -177,12 +189,14 @@ impl App {
                 world.set_ai(i, true);
             }
         }
-        self.keymaps = players
+        self.controls = players
             .iter()
             .map(|p| match p.controller {
-                ControllerKind::Keymap(n) => Some(n as usize - 1),
-                // La IA va aparte (`World::ais`). TODO(ratón, joystick): sin controlador todavía.
-                _ => None,
+                ControllerKind::Keymap(n) => Control::Keys(n as usize - 1),
+                // `Joystick(n)` es el n-ésimo mando (desde 1), como se enseña en Player Setup.
+                ControllerKind::Joystick(n) => Control::Pad((n as usize).saturating_sub(1)),
+                // La IA va aparte (`World::ais`). TODO(ratón): sin controlador todavía.
+                _ => Control::None,
             })
             .collect();
         self.players = players
@@ -228,11 +242,13 @@ impl App {
     fn inputs(&mut self) -> Vec<Input> {
         let keys = &self.keys;
         let latch = &mut self.bomb_latch;
-        self.keymaps
+        let pads = &mut self.joysticks;
+        self.controls
             .iter()
-            .map(|km| match *km {
-                None => Input::default(),
-                Some(i) => {
+            .map(|c| match *c {
+                Control::None => Input::default(),
+                Control::Pad(i) => pads.input(i),
+                Control::Keys(i) => {
                     let k = &KEYMAPS[i];
                     let down = |j: usize| keys.contains(&k[j]);
                     Input {
@@ -261,7 +277,7 @@ impl App {
             _ => false,
         };
         let (flow, save) = match &mut self.screen {
-            Screen::PlayerSetup(s) => s.key(code, text, &mut self.config),
+            Screen::PlayerSetup(s) => s.key(code, text, &mut self.config, self.joysticks.count()),
             Screen::MapSelect(s) => s.key(code, &mut self.config),
             Screen::MapEditor(s) => match self.assets.as_ref() {
                 Some(a) => (s.key(code, text, a, &self.config), false),
@@ -420,6 +436,7 @@ impl ApplicationHandler for App {
                 }
             }
             WindowEvent::RedrawRequested => {
+                self.joysticks.update();
                 let now = Instant::now();
                 let frame = (now - self.last).as_secs_f64().min(0.25);
                 self.last = now;
@@ -527,7 +544,8 @@ fn main() {
         menu,
         world: None,
         players: Vec::new(),
-        keymaps: Vec::new(),
+        controls: Vec::new(),
+        joysticks: Joysticks::new(),
         assets: None,
         ui: Ui::new(),
         keys: HashSet::new(),

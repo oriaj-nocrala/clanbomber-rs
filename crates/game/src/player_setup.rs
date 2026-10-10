@@ -45,7 +45,14 @@ impl PlayerSetup {
     }
 
     /// Devuelve a dónde ir y si hay que guardar la configuración.
-    pub fn key(&mut self, code: KeyCode, typed: Option<&str>, c: &mut Config) -> (Flow, bool) {
+    /// `joysticks`: mandos conectados; se suman a los controladores que se recorren con Enter.
+    pub fn key(
+        &mut self,
+        code: KeyCode,
+        typed: Option<&str>,
+        c: &mut Config,
+        joysticks: usize,
+    ) -> (Flow, bool) {
         if let Some(edit) = self.edit.as_mut() {
             match edit.key(code, typed, MAX_NAME) {
                 EditResult::Editing => {}
@@ -86,11 +93,14 @@ impl PlayerSetup {
                     1 => self.edit = Some(TextEdit::new(&b.name)),
                     2 => b.team = (b.team + 1) % 5,
                     _ => {
-                        let i = CONTROLLERS
+                        // `controller % (6 + joysticks)`: los seis fijos y luego cada mando.
+                        let all: Vec<ControllerKind> = CONTROLLERS
                             .iter()
-                            .position(|k| *k == b.controller)
-                            .unwrap_or(0);
-                        b.controller = CONTROLLERS[(i + 1) % CONTROLLERS.len()];
+                            .copied()
+                            .chain((1..=joysticks).map(|n| ControllerKind::Joystick(n as u8)))
+                            .collect();
+                        let i = all.iter().position(|k| *k == b.controller).unwrap_or(0);
+                        b.controller = all[(i + 1) % all.len()];
                     }
                 }
                 return (Flow::Stay, true);
@@ -259,17 +269,17 @@ mod tests {
     fn navigation_is_clamped_and_enter_cycles_values() {
         let mut c = Config::default();
         let mut s = PlayerSetup::new();
-        s.key(KeyCode::ArrowUp, None, &mut c);
-        s.key(KeyCode::ArrowLeft, None, &mut c);
+        s.key(KeyCode::ArrowUp, None, &mut c, 0);
+        s.key(KeyCode::ArrowLeft, None, &mut c, 0);
         assert_eq!((s.row, s.col), (0, 0));
-        assert_eq!(s.key(KeyCode::Enter, None, &mut c), (Flow::Stay, true));
+        assert_eq!(s.key(KeyCode::Enter, None, &mut c, 0), (Flow::Stay, true));
         assert_eq!(c.bombers[0].skin, 1);
-        s.key(KeyCode::ArrowRight, None, &mut c);
-        s.key(KeyCode::ArrowRight, None, &mut c);
-        s.key(KeyCode::Enter, None, &mut c);
+        s.key(KeyCode::ArrowRight, None, &mut c, 0);
+        s.key(KeyCode::ArrowRight, None, &mut c, 0);
+        s.key(KeyCode::Enter, None, &mut c, 0);
         assert_eq!(c.bombers[0].team, 1);
-        s.key(KeyCode::ArrowRight, None, &mut c);
-        s.key(KeyCode::Enter, None, &mut c);
+        s.key(KeyCode::ArrowRight, None, &mut c, 0);
+        s.key(KeyCode::Enter, None, &mut c, 0);
         assert_eq!(
             c.bombers[0].controller,
             ControllerKind::Keymap(2),
@@ -282,7 +292,7 @@ mod tests {
         let mut c = Config::default();
         c.bombers[0].skin = NR_SKINS - 1;
         let mut s = PlayerSetup::new();
-        s.key(KeyCode::Enter, None, &mut c);
+        s.key(KeyCode::Enter, None, &mut c, 0);
         assert_eq!(c.bombers[0].skin, 0);
     }
 
@@ -291,22 +301,22 @@ mod tests {
         let mut c = Config::default();
         let mut s = PlayerSetup::new();
         assert!(c.bombers[0].enabled);
-        s.key(KeyCode::Space, None, &mut c);
+        s.key(KeyCode::Space, None, &mut c, 0);
         assert!(!c.bombers[0].enabled);
-        assert_eq!(s.key(KeyCode::Escape, None, &mut c).0, Flow::Back);
+        assert_eq!(s.key(KeyCode::Escape, None, &mut c, 0).0, Flow::Back);
     }
 
     #[test]
     fn renaming_a_player() {
         let mut c = Config::default();
         let mut s = PlayerSetup::new();
-        s.key(KeyCode::ArrowRight, None, &mut c); // columna del nombre
-        s.key(KeyCode::Enter, None, &mut c); // empieza a editar
+        s.key(KeyCode::ArrowRight, None, &mut c, 0); // columna del nombre
+        s.key(KeyCode::Enter, None, &mut c, 0); // empieza a editar
         for _ in 0..3 {
-            s.key(KeyCode::Backspace, None, &mut c); // borra "Are"
+            s.key(KeyCode::Backspace, None, &mut c, 0); // borra "Are"
         }
-        s.key(KeyCode::KeyZ, Some("Zoé"), &mut c);
-        assert_eq!(s.key(KeyCode::Enter, None, &mut c), (Flow::Stay, true));
+        s.key(KeyCode::KeyZ, Some("Zoé"), &mut c, 0);
+        assert_eq!(s.key(KeyCode::Enter, None, &mut c, 0), (Flow::Stay, true));
         assert_eq!(c.bombers[0].name, "Zoé");
     }
 
@@ -314,17 +324,41 @@ mod tests {
     fn empty_names_are_rejected_and_escape_cancels_the_edit() {
         let mut c = Config::default();
         let mut s = PlayerSetup::new();
-        s.key(KeyCode::ArrowRight, None, &mut c);
-        s.key(KeyCode::Enter, None, &mut c);
+        s.key(KeyCode::ArrowRight, None, &mut c, 0);
+        s.key(KeyCode::Enter, None, &mut c, 0);
         for _ in 0..5 {
-            s.key(KeyCode::Backspace, None, &mut c);
+            s.key(KeyCode::Backspace, None, &mut c, 0);
         }
-        s.key(KeyCode::Enter, None, &mut c);
+        s.key(KeyCode::Enter, None, &mut c, 0);
         assert_eq!(c.bombers[0].name, "Are", "un nombre vacío no se guarda");
-        s.key(KeyCode::Enter, None, &mut c);
-        s.key(KeyCode::KeyQ, Some("q"), &mut c);
-        s.key(KeyCode::Escape, None, &mut c);
+        s.key(KeyCode::Enter, None, &mut c, 0);
+        s.key(KeyCode::KeyQ, Some("q"), &mut c, 0);
+        s.key(KeyCode::Escape, None, &mut c, 0);
         assert_eq!(c.bombers[0].name, "Are");
-        assert_eq!(s.key(KeyCode::Escape, None, &mut c).0, Flow::Back);
+        assert_eq!(s.key(KeyCode::Escape, None, &mut c, 0).0, Flow::Back);
+    }
+
+    #[test]
+    fn connected_joysticks_join_the_controller_cycle() {
+        let mut c = Config::default();
+        c.bombers[0].controller = ControllerKind::RcMouse;
+        let mut s = PlayerSetup::new();
+        for _ in 0..3 {
+            s.key(KeyCode::ArrowRight, None, &mut c, 2);
+        }
+        s.key(KeyCode::Enter, None, &mut c, 2);
+        assert_eq!(c.bombers[0].controller, ControllerKind::Joystick(1));
+        s.key(KeyCode::Enter, None, &mut c, 2);
+        assert_eq!(c.bombers[0].controller, ControllerKind::Joystick(2));
+        s.key(KeyCode::Enter, None, &mut c, 2);
+        assert_eq!(
+            c.bombers[0].controller,
+            ControllerKind::Ai,
+            "vuelta al principio"
+        );
+        // Sin mandos, tras el ratón se vuelve directamente a la IA.
+        c.bombers[0].controller = ControllerKind::RcMouse;
+        s.key(KeyCode::Enter, None, &mut c, 0);
+        assert_eq!(c.bombers[0].controller, ControllerKind::Ai);
     }
 }

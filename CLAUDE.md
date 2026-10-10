@@ -5,7 +5,8 @@ Port de ClanBomber a Rust + wgpu. Primero paridad de juego con el original, desp
 
 ## Dependencias del sistema
 
-Audio: `alsa-lib` (rodio) y `libopenmpt` + `pkgconf` (la música `.mod`). En Arch: `pacman -S alsa-lib libopenmpt pkgconf`.
+Audio: `alsa-lib` (rodio) y `libopenmpt` + `pkgconf` (la música `.mod`); mandos: `systemd-libs` (libudev, para gilrs).
+En Arch: `pacman -S alsa-lib libopenmpt pkgconf systemd-libs`.
 
 ## Comandos
 
@@ -78,6 +79,6 @@ enum (`CurrentSurfaceTexture`), `VertexState.buffers` es `&[Option<_>]`, `bind_g
 5. ~~Menús completos~~ (intro, principal, opciones, Player Setup, Map Selection, Map Editor, Credits, Help)
    → IA hecha (`ai.rs`, port de Controller_AI; AI_mass usa la misma). Sonido hecho (efectos con rodio y
    música `.mod` con libopenmpt; F2 la activa, P pausa), cadáveres, trozos, sangre en los créditos y
-   temblor de explosiones. Equipos hechos (rondas por equipo, marcador de equipos, la IA no vuela a compañeros). Pendiente: ratón y
-   joystick (quedan quietos).
+   temblor de explosiones. Equipos hechos (rondas por equipo, marcador de equipos, la IA no vuela a compañeros). Mandos hechos (gilrs: stick o cruceta + botón A).
+   Pendiente: el controlador de ratón (RCMOUSE; queda quieto).
 6. Partículas (compute), sprites con IA.

@@ -13,7 +13,7 @@ use crate::map::{Dir, TILE_PIXELS};
 use crate::movement::{advance, Env, Mover, Pos};
 
 /// Teclas pulsadas por un jugador en este tick.
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Input {
     pub left: bool,
     pub right: bool,
