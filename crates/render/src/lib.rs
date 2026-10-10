@@ -2,6 +2,7 @@
 //! con letterboxing. La escena se dibuja en una textura flotante intermedia, con partículas
 //! simuladas por compute, y una pasada final la compone en la ventana (bloom, CRT).
 
+mod fire;
 mod fx;
 mod text;
 
@@ -9,6 +10,7 @@ use std::sync::Arc;
 use wgpu::util::DeviceExt;
 use winit::window::Window;
 
+pub use fire::Fire;
 pub use fx::{Burst, Effects, ParticleKind};
 pub use text::{Align, Font, FontError};
 
@@ -25,10 +27,14 @@ struct Texture {
     size: (f32, f32),
 }
 
-struct Batch {
-    tex: TextureId,
-    first_quad: u32,
-    quads: u32,
+enum Batch {
+    Quads {
+        tex: TextureId,
+        first_quad: u32,
+        quads: u32,
+    },
+    /// Explosiones procedurales (`fire.wgsl`), en su orden de dibujo.
+    Fire { first: u32, count: u32 },
 }
 
 /// Hoja de sprites con celdas de tamaño fijo, numeradas en fila.
@@ -71,6 +77,8 @@ pub struct Renderer {
     sampler: wgpu::Sampler,
     textures: Vec<Texture>,
     batches: Vec<Batch>,
+    fire: fire::FirePipeline,
+    fires: Vec<fire::FireInstance>,
     vbuf: wgpu::Buffer,
     ibuf: wgpu::Buffer,
     verts: Vec<Vertex>,
@@ -225,6 +233,7 @@ impl Renderer {
             compute,
         );
         let particles = compute.then(|| fx::Particles::new(&device, &globals));
+        let fire = fire::FirePipeline::new(&device, &globals, fx::SCENE_FORMAT);
         let mut r = Renderer {
             surface,
             device,
@@ -236,6 +245,8 @@ impl Renderer {
             sampler,
             textures: Vec::new(),
             batches: Vec::new(),
+            fire,
+            fires: Vec::new(),
             vbuf,
             ibuf,
             verts: Vec::with_capacity(MAX_QUADS * 4),
@@ -416,11 +427,27 @@ impl Renderer {
             v(x + w, y + h, u1, v1),
         ]);
         match self.batches.last_mut() {
-            Some(b) if b.tex == tex => b.quads += 1,
-            _ => self.batches.push(Batch {
+            Some(Batch::Quads { tex: t, quads, .. }) if *t == tex => *quads += 1,
+            _ => self.batches.push(Batch::Quads {
                 tex,
                 first_quad: quad_index,
                 quads: 1,
+            }),
+        }
+    }
+
+    /// Explosión procedural (en lugar de los sprites de `explosion2.png`).
+    pub fn fire(&mut self, fire: &Fire) {
+        if self.fires.len() >= fire::MAX_FIRES {
+            return;
+        }
+        let index = self.fires.len() as u32;
+        self.fires.push(fire.instance());
+        match self.batches.last_mut() {
+            Some(Batch::Fire { count, .. }) => *count += 1,
+            _ => self.batches.push(Batch::Fire {
+                first: index,
+                count: 1,
             }),
         }
     }
@@ -439,6 +466,7 @@ impl Renderer {
         let view = frame.texture.create_view(&Default::default());
         self.queue
             .write_buffer(&self.vbuf, 0, bytemuck::cast_slice(&self.verts));
+        self.fire.upload(&self.queue, &self.fires);
 
         let mut enc = self.device.create_command_encoder(&Default::default());
         if let Some(p) = self.particles.as_mut() {
@@ -473,6 +501,7 @@ impl Renderer {
     fn clear_frame(&mut self) {
         self.verts.clear();
         self.batches.clear();
+        self.fires.clear();
         self.particle_layer = None;
     }
 
@@ -512,8 +541,20 @@ impl Renderer {
                 p.draw(&mut pass);
                 bind_quads(&mut pass);
             }
-            pass.set_bind_group(1, &self.textures[b.tex.0].bind_group, &[]);
-            pass.draw_indexed(b.first_quad * 6..(b.first_quad + b.quads) * 6, 0, 0..1);
+            match *b {
+                Batch::Quads {
+                    tex,
+                    first_quad,
+                    quads,
+                } => {
+                    pass.set_bind_group(1, &self.textures[tex.0].bind_group, &[]);
+                    pass.draw_indexed(first_quad * 6..(first_quad + quads) * 6, 0, 0..1);
+                }
+                Batch::Fire { first, count } => {
+                    self.fire.draw(&mut pass, first, count);
+                    bind_quads(&mut pass);
+                }
+            }
         }
         if let Some((p, _)) = particles.filter(|&(_, at)| at >= self.batches.len()) {
             p.draw(&mut pass);

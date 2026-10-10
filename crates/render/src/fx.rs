@@ -19,6 +19,8 @@ pub struct Effects {
     pub bloom: bool,
     pub crt: bool,
     pub particles: bool,
+    /// Explosiones procedurales en vez de los sprites.
+    pub fire: bool,
 }
 
 impl Default for Effects {
@@ -27,6 +29,7 @@ impl Default for Effects {
             bloom: true,
             crt: false,
             particles: true,
+            fire: true,
         }
     }
 }
@@ -659,6 +662,7 @@ mod tests {
             ("particles.wgsl", include_str!("particles.wgsl")),
             ("bloom.wgsl", include_str!("bloom.wgsl")),
             ("post.wgsl", include_str!("post.wgsl")),
+            ("fire.wgsl", include_str!("fire.wgsl")),
         ] {
             let module = naga::front::wgsl::parse_str(src)
                 .unwrap_or_else(|e| panic!("{name}: {}", e.emit_to_string(src)));
