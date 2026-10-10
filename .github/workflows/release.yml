@@ -1,6 +1,7 @@
 name: Release
 
-# Al subir una etiqueta `vX.Y.Z` compila el juego, lo empaqueta con sus recursos y publica la versión.
+# Al subir una etiqueta `vX.Y.Z` compila el juego para Linux, Windows y macOS, lo empaqueta con sus
+# recursos y publica la versión.
 on:
   push:
     tags: ["v*"]
@@ -12,42 +13,105 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  linux:
-    name: Linux x86_64
-    # Ubuntu 22.04 para enlazar con una glibc antigua y que el binario corra en más distribuciones.
-    runs-on: ubuntu-22.04
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux x86_64
+            os: ubuntu-22.04 # glibc antigua para que corra en más distribuciones
+            target: x86_64-unknown-linux-gnu
+            suffix: linux-x86_64
+            exe: clanbomber-rs
+            archive: tar.gz
+          - name: Windows x86_64
+            os: windows-latest
+            target: x86_64-pc-windows-msvc
+            suffix: windows-x86_64
+            exe: clanbomber-rs.exe
+            archive: zip
+          - name: macOS Apple Silicon
+            os: macos-latest
+            target: aarch64-apple-darwin
+            suffix: macos-arm64
+            exe: clanbomber-rs
+            archive: tar.gz
+          - name: macOS Intel
+            os: macos-latest
+            target: x86_64-apple-darwin
+            suffix: macos-x86_64
+            exe: clanbomber-rs
+            archive: tar.gz
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
       - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
       - name: Dependencias del sistema
-        run: sudo apt-get update && sudo apt-get install -y libasound2-dev libopenmpt-dev pkg-config libudev-dev
-      - run: cargo build --release -p cb-game
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev libudev-dev pkg-config
+      - name: Compilar
+        run: cargo build --release -p cb-game --target ${{ matrix.target }}
       - name: Empaquetar
+        shell: bash
         run: |
-          name="clanbomber-rs-${GITHUB_REF_NAME}-linux-x86_64"
+          name="clanbomber-rs-${GITHUB_REF_NAME}-${{ matrix.suffix }}"
           mkdir "$name"
-          cp target/release/clanbomber-rs "$name/"
+          cp "target/${{ matrix.target }}/release/${{ matrix.exe }}" "$name/"
           cp -r assets "$name/assets"
           cp LICENSE README.md "$name/"
-          strip "$name/clanbomber-rs"
-          tar czf "$name.tar.gz" "$name"
-          sha256sum "$name.tar.gz" > "$name.tar.gz.sha256"
-          echo "ASSET=$name.tar.gz" >> "$GITHUB_ENV"
+          if [ "${{ matrix.archive }}" = "zip" ]; then
+            7z a -tzip "$name.zip" "$name" > /dev/null
+            file="$name.zip"
+          else
+            if [ "$RUNNER_OS" = "Linux" ]; then strip "$name/${{ matrix.exe }}"; fi
+            tar czf "$name.tar.gz" "$name"
+            file="$name.tar.gz"
+          fi
+          (sha256sum "$file" 2>/dev/null || shasum -a 256 "$file") > "$file.sha256"
+          echo "FILE=$file" >> "$GITHUB_ENV"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.suffix }}
+          path: |
+            ${{ env.FILE }}
+            ${{ env.FILE }}.sha256
+
+  publish:
+    name: Publicar versión
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
       - uses: softprops/action-gh-release@v3
         with:
-          files: |
-            ${{ env.ASSET }}
-            ${{ env.ASSET }}.sha256
+          files: dist/*
           generate_release_notes: true
           body: |
             ## Cómo jugar / How to play
 
-            ```bash
-            tar xzf ${{ env.ASSET }}
-            cd clanbomber-rs-*
-            ./clanbomber-rs
-            ```
+            Descomprime y ejecuta `clanbomber-rs` (`clanbomber-rs.exe` en Windows) desde la carpeta que
+            se crea: lleva dentro su carpeta `assets`. / Extract and run `clanbomber-rs` (`clanbomber-rs.exe`
+            on Windows) from the folder it creates: it ships with its `assets` folder.
 
-            Necesita en el sistema / Needs on the system: `libasound2`, `libopenmpt0`, `libudev1`
-            (`sudo apt install libasound2 libopenmpt0 libudev1`) y una GPU con Vulkan.
+            | Sistema / System | Archivo / File | Necesita / Needs |
+            |---|---|---|
+            | Linux x86_64 | `*-linux-x86_64.tar.gz` | `libasound2`, `libudev1` y GPU con Vulkan |
+            | Windows x86_64 | `*-windows-x86_64.zip` | GPU con Vulkan o DX12 |
+            | macOS (Apple Silicon) | `*-macos-arm64.tar.gz` | — |
+            | macOS (Intel) | `*-macos-x86_64.tar.gz` | — |
+
+            **macOS**: el binario no está firmado; si Gatekeeper lo bloquea, ejecuta
+            `xattr -dr com.apple.quarantine clanbomber-rs-*` una vez. / The binary is unsigned; if Gatekeeper
+            blocks it, run `xattr -dr com.apple.quarantine clanbomber-rs-*` once.
+
+            **Windows**: SmartScreen puede avisar porque el ejecutable no está firmado. / SmartScreen may warn
+            because the executable is unsigned.

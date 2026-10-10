@@ -7,8 +7,9 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-  # Las dependencias del sistema que necesitan el sonido (rodio/cpal), la música (.mod) y los mandos.
-  APT_DEPS: libasound2-dev libopenmpt-dev pkg-config libudev-dev
+  # Linux necesita las cabeceras de ALSA (sonido, vía rodio/cpal) y de libudev (mandos, vía gilrs).
+  # Windows y macOS no necesitan nada más.
+  APT_DEPS: libasound2-dev libudev-dev pkg-config
 
 jobs:
   fmt:
@@ -35,24 +36,34 @@ jobs:
       - run: cargo clippy --workspace --all-targets -- -D warnings
 
   test:
-    name: Tests
-    runs-on: ubuntu-latest
+    name: Tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Dependencias del sistema
+        if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y $APT_DEPS
       - run: cargo test --workspace
 
   build:
-    name: Compilación release
-    runs-on: ubuntu-latest
+    name: Compilación release (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
     needs: [fmt, clippy, test]
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Dependencias del sistema
+        if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y $APT_DEPS
-      - run: cargo build --release --workspace
+      - run: cargo build --release -p cb-game

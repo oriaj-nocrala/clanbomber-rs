@@ -11,7 +11,8 @@ Up to 8 players, AI opponents, gamepads, 33 maps, power-ups, diseases, ice, trap
 [![wgpu](https://img.shields.io/badge/wgpu-30-5C2D91?style=for-the-badge&logo=webgpu&logoColor=white)](https://wgpu.rs)
 [![License](https://img.shields.io/badge/license-GPL--2.0--or--later-2F80ED?style=for-the-badge&logo=gnu&logoColor=white)](LICENSE)
 
-![Platform](https://img.shields.io/badge/platform-Linux-FCC624?style=flat-square&logo=linux&logoColor=black)
+![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20Windows%20%7C%20macOS-FCC624?style=flat-square&logo=github&logoColor=black)
+[![Release](https://img.shields.io/github/v/release/oriaj-nocrala/clanbomber-rs?style=flat-square&logo=github&logoColor=white&label=release)](https://github.com/oriaj-nocrala/clanbomber-rs/releases/latest)
 ![Tests](https://img.shields.io/badge/tests-130%2B-3FB950?style=flat-square&logo=rust&logoColor=white)
 ![Clippy](https://img.shields.io/badge/clippy-clean-3FB950?style=flat-square&logo=rust&logoColor=white)
 ![Deterministic](https://img.shields.io/badge/simulation-deterministic-8957E5?style=flat-square)
@@ -35,7 +36,8 @@ ClanBomber is a shared-screen Bomberman: mazes of boxes and walls, bombs that ex
 you stronger… or put you on a cocaine rush. This project is a **faithful Rust port** of the original game (the SDL
 fork by [viti95](https://github.com/viti95/ClanBomber2) was the executable reference): same rules, same maps, same
 graphics and sounds, but with a clean, well-tested simulation core and a modern **wgpu** renderer (Vulkan, Metal,
-DX12). Tested on Linux; macOS and Windows should work but are untested.
+DX12). It builds and passes its test suite on **Linux, Windows and macOS** in CI; day-to-day play-testing happens on
+Linux.
 
 <table>
 <tr>
@@ -86,7 +88,8 @@ DX12). Tested on Linux; macOS and Windows should work but are untested.
 - **33 maps** from the original, a **map editor**, a selector with preview and 6 themes.
 - **Corpses** that crawl around and burst into chunks, screen shake, blood in the credits and a kids mode to switch
   it all off.
-- **Sound and music**: the original effects plus the `bud.mod` tracker module (F2), rendered with libopenmpt.
+- **Sound and music**: the original effects plus the `bud.mod` soundtrack (F2), pre-rendered to Ogg Vorbis so it plays
+  the same everywhere.
 - **Fully configurable** from the menu: starting and maximum power-ups, bomb timings, which items drop, points to
   win, round time…
 - **Deterministic**: fixed-step simulation (60 Hz) and every random number comes from one seeded generator. Same
@@ -111,15 +114,26 @@ the kick) pushes it.
 | P / F3 | Pause |
 | F2 | Background music |
 
-## 🚀 Build and play
+## 🚀 Download and play
 
-You need [Rust](https://rustup.rs) (stable) and, for sound and gamepads, a few system libraries:
+Grab the build for your system from the **[Releases](https://github.com/oriaj-nocrala/clanbomber-rs/releases/latest)**
+page — Linux x86_64, Windows x86_64, macOS Apple Silicon and macOS Intel. Extract it and run `clanbomber-rs`
+(`clanbomber-rs.exe` on Windows); the `assets` folder next to it has everything the game needs.
+
+- **Linux** needs `libasound2` and `libudev1` (and a Vulkan-capable GPU).
+- **Windows** needs a Vulkan or DX12 capable GPU. SmartScreen may warn: the executable is unsigned.
+- **macOS**: the binary is unsigned; if Gatekeeper blocks it, run `xattr -dr com.apple.quarantine clanbomber-rs-*` once.
+
+## 🔨 Build from source
+
+You need [Rust](https://rustup.rs) (stable). Windows and macOS need nothing else; Linux needs the ALSA and udev
+headers (sound and gamepads):
 
 ```bash
 # Arch Linux
-sudo pacman -S alsa-lib libopenmpt pkgconf systemd-libs
+sudo pacman -S alsa-lib pkgconf systemd-libs
 # Debian / Ubuntu
-sudo apt install libasound2-dev libopenmpt-dev pkg-config libudev-dev
+sudo apt install libasound2-dev libudev-dev pkg-config
 ```
 
 ```bash
@@ -128,11 +142,9 @@ cd clanbomber-rs
 cargo run --release -p cb-game
 ```
 
-Or grab a prebuilt Linux build from the [Releases](https://github.com/oriaj-nocrala/clanbomber-rs/releases) page
-(it only needs `libasound2`, `libopenmpt0`, `libudev1` and a Vulkan-capable GPU).
-
-Your settings live in `~/.config/clanbomber-rs/config.txt` and your own maps in
-`~/.local/share/clanbomber-rs/maps/`. Set `CB_ASSETS=/path/to/assets` to use a different assets folder.
+Your settings and your own maps live in your system's config / data folders (`~/.config/clanbomber-rs/` and
+`~/.local/share/clanbomber-rs/maps/` on Linux, `~/Library/Application Support/clanbomber-rs/` on macOS,
+`%APPDATA%\clanbomber-rs\` on Windows). Set `CB_ASSETS=/path/to/assets` to use a different assets folder.
 
 ### Taking screenshots
 
@@ -160,7 +172,7 @@ cargo test        # 130+ tests: rules, AI, rounds, teams, menus, gamepads…
 ```
 
 Every gameplay rule cites, in a comment, the original source file it was ported from. CI runs formatting, Clippy
-(warnings are errors), the test suite and a release build on every push.
+(warnings are errors), the test suite and a release build on every push — on Linux, Windows and macOS.
 
 ## 🛣️ Roadmap
 
@@ -191,7 +203,7 @@ ClanBomber es un Bomberman de pantalla compartida: laberintos de cajas y muros, 
 que te hacen más fuerte… o te ponen a tope de cocaína. Este proyecto es **un port fiel a Rust** del juego original
 (el fork SDL de [viti95](https://github.com/viti95/ClanBomber2) fue la referencia ejecutable): mismas reglas, mismos
 mapas, mismos gráficos y sonidos, pero con un núcleo de simulación limpio y testeado y un renderer moderno sobre
-**wgpu**. Probado en Linux; macOS y Windows deberían funcionar, pero no se han probado.
+**wgpu**. Compila y pasa sus tests en **Linux, Windows y macOS** (CI); las pruebas jugando son sobre todo en Linux.
 
 Las capturas de arriba son las mismas: menú, partidas con distintos temas, marcadores, configuración de jugadores,
 selección de mapas y editor.
@@ -210,7 +222,8 @@ selección de mapas y editor.
 - **33 mapas** del original, **editor de mapas** propio, selección con vista previa y 6 temas.
 - **Cadáveres** que se arrastran y revientan en trozos, temblor de explosiones, sangre en los créditos y modo
   infantil para apagarlo todo.
-- **Sonido y música**: efectos del original y el módulo `bud.mod` (F2) renderizado con libopenmpt.
+- **Sonido y música**: efectos del original y la banda sonora `bud.mod` (F2), prerenderizada a Ogg Vorbis para que suene
+  igual en todas partes.
 - **Todo configurable** desde el menú: extras iniciales y máximos, tiempos de bomba, qué extras caen, puntos para
   ganar, tiempo de ronda…
 - **Determinista**: simulación de paso fijo (60 Hz) y toda la aleatoriedad con un generador con semilla. Misma
@@ -228,22 +241,30 @@ selección de mapas y editor.
 **Pulsar bomba otra vez sin moverte** (con guante) lanza la bomba. **Caminar contra una bomba** (con patada) la
 empuja. Esc sale al menú, Espacio pasa del marcador a la siguiente ronda, P/F3 pausa y F2 activa la música.
 
-### 🚀 Compilar y jugar
+### 🚀 Descargar y jugar
+
+Descarga la versión para tu sistema desde [Releases](https://github.com/oriaj-nocrala/clanbomber-rs/releases/latest)
+(Linux x86_64, Windows x86_64, macOS Apple Silicon y macOS Intel), descomprime y ejecuta `clanbomber-rs`
+(`clanbomber-rs.exe` en Windows). Linux necesita `libasound2` y `libudev1`; en macOS, si Gatekeeper lo bloquea
+(el binario no está firmado), ejecuta una vez `xattr -dr com.apple.quarantine clanbomber-rs-*`.
+
+Para compilar desde el código necesitas [Rust](https://rustup.rs); en Windows y macOS no hace falta nada más y en
+Linux las cabeceras de ALSA y udev:
 
 ```bash
 # Arch Linux
-sudo pacman -S alsa-lib libopenmpt pkgconf systemd-libs
+sudo pacman -S alsa-lib pkgconf systemd-libs
 # Debian / Ubuntu
-sudo apt install libasound2-dev libopenmpt-dev pkg-config libudev-dev
+sudo apt install libasound2-dev libudev-dev pkg-config
 
 git clone https://github.com/oriaj-nocrala/clanbomber-rs.git
 cd clanbomber-rs
 cargo run --release -p cb-game
 ```
 
-También hay compilaciones para Linux en la página de [Releases](https://github.com/oriaj-nocrala/clanbomber-rs/releases).
-La configuración se guarda en `~/.config/clanbomber-rs/config.txt` y tus mapas en
-`~/.local/share/clanbomber-rs/maps/`. Con `CB_ASSETS=/ruta/a/assets` se usa otra carpeta de recursos.
+La configuración y tus mapas se guardan en las carpetas de configuración y de datos de tu sistema
+(`~/.config/clanbomber-rs/` y `~/.local/share/clanbomber-rs/maps/` en Linux). Con `CB_ASSETS=/ruta/a/assets` se usa
+otra carpeta de recursos.
 
 Para sacar las capturas: `cargo run --release -p cb-game -- --screenshots docs/img` (renderiza fuera de pantalla, no
 captura tu escritorio).

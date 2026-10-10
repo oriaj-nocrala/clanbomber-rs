@@ -5,8 +5,9 @@ Port de ClanBomber a Rust + wgpu. Primero paridad de juego con el original, desp
 
 ## Dependencias del sistema
 
-Audio: `alsa-lib` (rodio) y `libopenmpt` + `pkgconf` (la música `.mod`); mandos: `systemd-libs` (libudev, para gilrs).
-En Arch: `pacman -S alsa-lib libopenmpt pkgconf systemd-libs`.
+Solo Linux: `alsa-lib` (sonido, rodio) y `systemd-libs` (libudev, mandos con gilrs) + `pkgconf`. En Arch:
+`pacman -S alsa-lib pkgconf systemd-libs`. Windows y macOS no necesitan nada. (La música es `bud.ogg`, `bud.mod`
+renderizado una vez con `openmpt123 --render` + `ffmpeg`; ya no hay dependencia de libopenmpt.)
 
 ## Comandos
 
@@ -71,8 +72,9 @@ enum (`CurrentSurfaceTexture`), `VertexState.buffers` es `&[Option<_>]`, `bind_g
 ## CI/CD
 
 - `.github/workflows/ci.yml`: formato, Clippy (`-D warnings`), tests y compilación release en cada push y PR.
-- `.github/workflows/release.yml`: al subir una etiqueta `vX.Y.Z` empaqueta el binario con `assets/` y publica la
-  versión. Los recursos se buscan en tiempo de ejecución (`crates/game/src/paths.rs`: `CB_ASSETS`, junto al
+- `.github/workflows/release.yml`: al subir una etiqueta `vX.Y.Z` compila para Linux, Windows y macOS (arm64 e
+  Intel), empaqueta cada binario con `assets/` y publica la versión. Los tests y la compilación de CI también
+  corren en los tres sistemas. Los recursos se buscan en tiempo de ejecución (`crates/game/src/paths.rs`: `CB_ASSETS`, junto al
   ejecutable, `../share/...`, o el repo).
 - Antes de subir: `cargo fmt --all`, `cargo clippy --workspace --all-targets -- -D warnings` y `cargo test`.
 - El README principal está en inglés; el español va en un `<details>` al final del mismo archivo.
@@ -88,7 +90,7 @@ enum (`CurrentSurfaceTexture`), `VertexState.buffers` es `&[Option<_>]`, `bind_g
 4. ~~Extras, enfermedades, hielo/flechas/trampas, ciclo de partida (rondas, reloj, marcador)~~
 5. ~~Menús completos~~ (intro, principal, opciones, Player Setup, Map Selection, Map Editor, Credits, Help)
    → IA hecha (`ai.rs`, port de Controller_AI; la segunda IA del original, AI_mass, no se portó a propósito). Sonido hecho (efectos con rodio y
-   música `.mod` con libopenmpt; F2 la activa, P pausa), cadáveres, trozos, sangre en los créditos y
+   música Ogg en bucle; F2 la activa, P pausa), cadáveres, trozos, sangre en los créditos y
    temblor de explosiones. Equipos hechos (rondas por equipo, marcador de equipos, la IA no vuela a compañeros). Mandos hechos (gilrs: stick o cruceta + botón A).
    No se portaron a propósito la segunda IA (AI_mass) ni el controlador de ratón (RCMOUSE).
 6. Partículas (compute), sprites con IA.
