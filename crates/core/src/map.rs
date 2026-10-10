@@ -1,6 +1,8 @@
 //! Formato `.map` de ClanBomber: línea 1 autor, línea 2 máx. jugadores,
 //! luego 13 filas de 17 caracteres.
 
+use crate::rng::Rng;
+
 pub const MAP_WIDTH: usize = 17;
 pub const MAP_HEIGHT: usize = 13;
 pub const TILE_PIXELS: u32 = 40;
@@ -58,8 +60,19 @@ pub struct Crumble {
     pub left: f32,
 }
 
+/// Casilla que el observador está haciendo desaparecer al acabarse el tiempo: se encoge 1 s
+/// y queda sin suelo (`MapTile::vanish`, `next = NONE`).
+#[derive(Clone, Copy, Debug)]
+pub struct Vanish {
+    pub x: usize,
+    pub y: usize,
+    pub left: f32,
+}
+
 #[derive(Clone, Debug)]
 pub struct Map {
+    /// Nombre del archivo sin extensión (`MapEntry::get_name`).
+    pub name: String,
     pub author: String,
     pub max_players: u8,
     tiles: [[Tile; MAP_HEIGHT]; MAP_WIDTH],
@@ -68,11 +81,18 @@ pub struct Map {
     /// Casillas `R`: caja con probabilidad 2/3 (se resuelve al iniciar la partida).
     pub random_boxes: Vec<(usize, usize)>,
     pub crumbling: Vec<Crumble>,
+    pub vanishing: Vec<Vanish>,
 }
 
 impl Map {
     pub fn load(path: impl AsRef<std::path::Path>) -> Result<Self, MapError> {
-        Self::parse(&std::fs::read_to_string(path)?)
+        let path = path.as_ref();
+        let mut map = Self::parse(&std::fs::read_to_string(path)?)?;
+        map.name = path
+            .file_stem()
+            .map(|s| s.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        Ok(map)
     }
 
     pub fn parse(src: &str) -> Result<Self, MapError> {
@@ -92,12 +112,14 @@ impl Map {
         let mut chars = rest[digits..].chars().filter(|&c| c != '\n');
 
         let mut map = Map {
+            name: String::new(),
             author,
             max_players,
             tiles: [[Tile::None; MAP_HEIGHT]; MAP_WIDTH],
             spawns: Vec::new(),
             random_boxes: Vec::new(),
             crumbling: Vec::new(),
+            vanishing: Vec::new(),
         };
 
         for y in 0..MAP_HEIGHT {
@@ -174,10 +196,11 @@ impl Map {
 
     /// `MapTile::passable`: suelo normal donde puede caer un extra (`Map::get_passable`).
     pub fn is_passable(&self, tx: i32, ty: i32) -> bool {
-        matches!(
-            self.get(tx, ty),
-            Tile::Ground | Tile::Ice | Tile::Arrow(_) | Tile::Trap
-        )
+        !self.is_vanishing(tx, ty)
+            && matches!(
+                self.get(tx, ty),
+                Tile::Ground | Tile::Ice | Tile::Arrow(_) | Tile::Trap
+            )
     }
 
     /// `MapTile_None`: dentro del mapa, sin suelo (los objetos caen).
@@ -222,11 +245,104 @@ impl Map {
         for c in &done {
             self.tiles[c.x][c.y] = Tile::Ground;
         }
+        for v in &mut self.vanishing {
+            v.left -= dt;
+        }
+        for v in self.vanishing.iter().filter(|v| v.left <= 0.0) {
+            self.tiles[v.x][v.y] = Tile::None;
+        }
+        self.vanishing.retain(|v| v.left > 0.0);
         done.iter().map(|c| (c.x, c.y)).collect()
+    }
+
+    pub fn is_vanishing(&self, tx: i32, ty: i32) -> bool {
+        self.vanishing
+            .iter()
+            .any(|v| v.x as i32 == tx && v.y as i32 == ty)
+    }
+
+    /// Resuelve las casillas `R`: caja con probabilidad 2/3 (`Map::reload`).
+    pub fn resolve_random_boxes(&mut self, rng: &mut Rng) {
+        for (x, y) in std::mem::take(&mut self.random_boxes) {
+            self.tiles[x][y] = if rng.below(3) != 0 {
+                Tile::Box
+            } else {
+                Tile::Ground
+            };
+        }
+    }
+
+    /// `Map::get_random`: casilla cualquiera que no sea un hueco ni se esté desvaneciendo.
+    pub fn get_random(&self, rng: &mut Rng) -> Option<(usize, usize)> {
+        for _ in 0..1000 {
+            let x = rng.below(MAP_WIDTH as u32) as usize;
+            let y = rng.below(MAP_HEIGHT as u32) as usize;
+            if self.tiles[x][y] != Tile::None && !self.is_vanishing(x as i32, y as i32) {
+                return Some((x, y));
+            }
+        }
+        None
+    }
+
+    /// `MapTile::vanish`: las cajas se rompen; los huecos no hacen nada; el resto se encoge.
+    /// Devuelve `true` si la casilla empieza a desvanecerse (los extras encima deben huir).
+    pub fn vanish(&mut self, tx: i32, ty: i32) -> bool {
+        match self.get(tx, ty) {
+            Tile::Box => {
+                self.destroy(tx, ty);
+                false
+            }
+            Tile::None => false,
+            _ if self.is_vanishing(tx, ty) => false,
+            _ => {
+                self.vanishing.push(Vanish {
+                    x: tx as usize,
+                    y: ty as usize,
+                    left: 1.0,
+                });
+                true
+            }
+        }
     }
 
     pub fn set(&mut self, x: usize, y: usize, t: Tile) {
         self.tiles[x][y] = t;
+    }
+}
+
+/// Lista de mapas disponibles, ordenada por nombre sin distinguir mayúsculas
+/// (`Map::enum_maps` + `sort_maps`), con el cursor de `spin_up`.
+#[derive(Clone, Debug)]
+pub struct MapList {
+    pub paths: Vec<std::path::PathBuf>,
+    pub index: usize,
+}
+
+impl MapList {
+    pub fn scan(dir: impl AsRef<std::path::Path>) -> Result<Self, MapError> {
+        let mut paths: Vec<_> = std::fs::read_dir(dir)?
+            .filter_map(|e| e.ok().map(|e| e.path()))
+            .filter(|p| p.extension().is_some_and(|x| x == "map"))
+            .collect();
+        paths.sort_by_key(|p| p.file_stem().map(|s| s.to_string_lossy().to_lowercase()));
+        Ok(MapList { paths, index: 0 })
+    }
+
+    pub fn current(&self) -> Result<Map, MapError> {
+        Map::load(&self.paths[self.index])
+    }
+
+    /// `Map::load_next_valid`: avanza (con vuelta al principio) hasta un mapa donde caben
+    /// `players` jugadores. Si ninguno sirve se queda en el actual.
+    pub fn next_for(&mut self, players: usize) -> Result<Map, MapError> {
+        for _ in 0..self.paths.len() {
+            self.index = (self.index + 1) % self.paths.len();
+            let map = self.current()?;
+            if map.max_players as usize >= players {
+                return Ok(map);
+            }
+        }
+        self.current()
     }
 }
 

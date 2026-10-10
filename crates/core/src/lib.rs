@@ -9,12 +9,14 @@ pub mod flight;
 pub mod map;
 pub mod movement;
 pub mod rng;
+pub mod round;
 pub mod sim;
 
 pub use bomb::{Bomb, Explosion, Object};
 pub use bomber::{Bomber, Input};
 pub use disease::{Disease, DiseaseKind};
 pub use extra::{Extra, ExtraConfig, ExtraKind};
-pub use map::{Dir, Map, Tile, MAP_HEIGHT, MAP_WIDTH, TILE_PIXELS};
+pub use map::{Dir, Map, MapList, Tile, MAP_HEIGHT, MAP_WIDTH, TILE_PIXELS};
 pub use rng::Rng;
+pub use round::{Observer, Phase, POINTS_TO_WIN, ROUND_TIME};
 pub use sim::{World, TICK_HZ};

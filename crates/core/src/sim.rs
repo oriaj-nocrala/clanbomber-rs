@@ -1,9 +1,10 @@
 use crate::bomb::{Bomb, Explosion, Object};
 use crate::bomber::{Action, Bomber, Input};
 use crate::extra::{roll_extra, Extra, ExtraConfig, ExtraKind};
-use crate::map::{Dir, Map, Tile, MAP_HEIGHT, MAP_WIDTH, TILE_PIXELS};
+use crate::map::{Dir, Map, MapList, Tile, MAP_HEIGHT, MAP_WIDTH, TILE_PIXELS};
 use crate::movement::{advance, Env, Mover, Pos};
 use crate::rng::Rng;
+use crate::round::{Observer, Phase, POINTS_TO_WIN, ROUND_TIME};
 
 /// Frecuencia fija de la simulación. El render interpola entre ticks.
 pub const TICK_HZ: u32 = 60;
@@ -20,12 +21,22 @@ pub struct World {
     pub rng: Rng,
     pub extra_config: ExtraConfig,
     /// Estado de cada casilla de flecha (`MapTile_Arrow::old_bomb`, `chill_countdown`).
-    arrows: Vec<ArrowState>,
+    pub(crate) arrows: Vec<ArrowState>,
     /// Bombas retenidas por una trampa, fuera de `objects` (`MapTile_Trap::bombs`).
-    trapped: Vec<Trapped>,
+    pub(crate) trapped: Vec<Trapped>,
+    /// Reglas de partida (reloj, ganador, rondas); las pruebas sueltas las dejan apagadas.
+    pub(crate) rounds_enabled: bool,
+    pub round_time: f32,
+    pub observer: Observer,
+    pub phase: Phase,
+    pub points_to_win: i32,
+    /// Mapas disponibles para las rondas siguientes (si no hay, se repite el inicial).
+    pub playlist: Option<MapList>,
+    pub(crate) pristine: Map,
+    pub(crate) next_map: Option<Map>,
 }
 
-struct ArrowState {
+pub(crate) struct ArrowState {
     tile: (usize, usize),
     dir: Dir,
     /// ¿Había una bomba en la casilla el tick anterior? (`old_bomb != NULL`)
@@ -33,7 +44,7 @@ struct ArrowState {
     chill: f32,
 }
 
-struct Trapped {
+pub(crate) struct Trapped {
     bomb: Bomb,
     tile: (usize, usize),
     countdown: f32,
@@ -63,7 +74,9 @@ impl View<'_> {
     }
 
     fn has_bomber(&self, tx: i32, ty: i32) -> bool {
-        self.bombers.iter().any(|b| !b.dead && b.tile() == (tx, ty))
+        self.bombers
+            .iter()
+            .any(|b| b.on_ground() && b.tile() == (tx, ty))
     }
 
     fn bomb_is_still(&self, i: usize) -> bool {
@@ -92,6 +105,32 @@ impl World {
 
     /// La semilla fija todo lo aleatorio (extras que sueltan las cajas).
     pub fn with_seed(map: Map, seed: u64) -> Self {
+        let pristine = map.clone();
+        let mut map = map;
+        let mut rng = Rng::new(seed);
+        map.resolve_random_boxes(&mut rng);
+        World {
+            arrows: Self::arrows_for(&map),
+            trapped: Vec::new(),
+            rounds_enabled: false,
+            round_time: ROUND_TIME,
+            observer: Observer::new(),
+            phase: Phase::Playing,
+            points_to_win: POINTS_TO_WIN,
+            playlist: None,
+            pristine,
+            next_map: None,
+            map,
+            bombers: Vec::new(),
+            objects: Vec::new(),
+            tick: 0,
+            rng,
+            extra_config: ExtraConfig::default(),
+        }
+    }
+
+    /// Estado de las casillas de flecha de un mapa.
+    fn arrows_for(map: &Map) -> Vec<ArrowState> {
         let mut arrows = Vec::new();
         for y in 0..MAP_HEIGHT {
             for x in 0..MAP_WIDTH {
@@ -105,16 +144,13 @@ impl World {
                 }
             }
         }
-        World {
-            arrows,
-            trapped: Vec::new(),
-            map,
-            bombers: Vec::new(),
-            objects: Vec::new(),
-            tick: 0,
-            rng: Rng::new(seed),
-            extra_config: ExtraConfig::default(),
-        }
+        arrows
+    }
+
+    /// Cambia el mapa (nueva ronda) y reinicia lo que depende de él.
+    pub(crate) fn set_map(&mut self, map: Map) {
+        self.arrows = Self::arrows_for(&map);
+        self.map = map;
     }
 
     /// Crea un bomber por cada una de las primeras `n` posiciones de salida del mapa.
@@ -169,6 +205,15 @@ impl World {
     /// Mismo orden que `ClanBomberApplication`: borrar objetos marcados, luego mapa,
     /// objetos y bombers (`delete_some` + `act_all`).
     pub fn step(&mut self, inputs: &[Input]) {
+        if self.rounds_enabled {
+            // Con el marcador en pantalla el mundo se congela hasta `confirm()`.
+            if matches!(self.phase, Phase::Scores { .. }) {
+                return;
+            }
+            if self.observer_act() {
+                return;
+            }
+        }
         self.delete_some();
         // Una caja que acaba de desmoronarse puede soltar un extra (MapTile_Box::act).
         for (x, y) in self.map.act(TICK_DT) {
@@ -216,7 +261,7 @@ impl World {
         let bomber_tiles: Vec<Option<(i32, i32)>> = self
             .bombers
             .iter()
-            .map(|b| (!b.dead).then(|| b.tile()))
+            .map(|b| b.on_ground().then(|| b.tile()))
             .collect();
         let bomb_tiles: Vec<Option<((i32, i32), bool)>> = self
             .objects
@@ -422,14 +467,14 @@ impl World {
             return;
         }
         for b in self.bombers.iter_mut() {
-            if !b.dead && !b.is_diseased() && b.tile() == tile {
+            if b.on_ground() && !b.is_diseased() && b.tile() == tile {
                 b.infect(d.kind);
             }
         }
     }
 
     /// `Map::get_passable`: casilla transitable al azar (hasta 1000 intentos).
-    fn get_passable(&mut self) -> Option<(usize, usize)> {
+    pub(crate) fn get_passable(&mut self) -> Option<(usize, usize)> {
         for _ in 0..1000 {
             let x = self.rng.below(crate::map::MAP_WIDTH as u32) as usize;
             let y = self.rng.below(crate::map::MAP_HEIGHT as u32) as usize;
@@ -502,7 +547,7 @@ impl World {
 
     /// `MapTile_None::act`: lo que pisa una casilla sin suelo cae.
     fn fall_into_holes(&mut self) {
-        for b in self.bombers.iter_mut().filter(|b| !b.dead) {
+        for b in self.bombers.iter_mut().filter(|b| b.on_ground()) {
             let (tx, ty) = b.tile();
             if self.map.is_hole(tx, ty) {
                 b.fall();
@@ -569,7 +614,7 @@ impl World {
         for b in self
             .bombers
             .iter_mut()
-            .filter(|b| !b.dead && b.tile() == tile)
+            .filter(|b| b.on_ground() && b.tile() == tile)
         {
             // Todo extra cura primero la enfermedad que hubiera (y suelta su extra).
             b.loose_disease();
@@ -766,6 +811,7 @@ mod tests {
     use crate::disease::DiseaseKind;
     use crate::map::Dir;
     use crate::map::Map;
+    use crate::round::Phase;
 
     fn open_world() -> World {
         let src = "x\n2\n".to_owned() + &" ".repeat(17 * 13);
@@ -1313,5 +1359,244 @@ mod tests {
         }
         assert!(exploded, "sale disparada y explota casi al aterrizar");
         assert_eq!(w.bombers[0].cur_bombs, 1, "el bomber recupera su bomba");
+    }
+
+    // ---- Ciclo de partida ----
+
+    fn arena() -> Map {
+        Map::load(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../assets/maps/Arena.map"
+        ))
+        .unwrap()
+    }
+
+    fn match_world() -> World {
+        let mut w = World::with_seed(arena(), 5);
+        w.start_match(2);
+        w
+    }
+
+    /// Avanza hasta que los bombers aterrizan y arranca el reloj.
+    fn land(w: &mut World) {
+        for _ in 0..200 {
+            w.step(&[]);
+            if w.bombers.iter().all(|b| !b.flight.active) {
+                break;
+            }
+        }
+        w.step(&[]);
+    }
+
+    #[test]
+    fn bombers_fly_in_and_the_clock_waits_for_them() {
+        let mut w = match_world();
+        assert!(w.bombers.iter().all(|b| b.flight.active && !b.dead));
+        assert_eq!((w.bombers[0].x, w.bombers[0].y), (350.0, 270.0));
+        for _ in 0..5 {
+            w.step(&[]);
+        }
+        assert_eq!(
+            w.time_left(),
+            crate::ROUND_TIME,
+            "el reloj no corre mientras vuelan"
+        );
+        land(&mut w);
+        assert!(w.time_left() < crate::ROUND_TIME);
+        for (b, expected) in w.bombers.iter().zip(w.bombers.iter().map(|b| b.orig)) {
+            assert_eq!((b.get_x(), b.get_y()), expected);
+        }
+    }
+
+    #[test]
+    fn spawn_points_are_a_permutation_of_the_map_starts() {
+        let w = match_world();
+        let mut origs: Vec<_> = w.bombers.iter().map(|b| b.orig).collect();
+        origs.sort();
+        origs.dedup();
+        assert_eq!(origs.len(), 2, "no comparten salida");
+        for o in origs {
+            assert!(w
+                .map
+                .spawns
+                .iter()
+                .any(|&(_, x, y)| (x as i32 * 40, y as i32 * 40) == o));
+        }
+    }
+
+    #[test]
+    fn last_bomber_standing_wins_the_round() {
+        let mut w = match_world();
+        land(&mut w);
+        w.bombers[1].die();
+        for _ in 0..3 {
+            w.step(&[]);
+        }
+        assert_eq!(
+            w.phase,
+            Phase::Scores {
+                winner: Some(0),
+                end_of_game: false
+            }
+        );
+        assert_eq!(w.bombers[0].points, 1);
+        assert_eq!(w.bombers[1].points, 0);
+    }
+
+    #[test]
+    fn everyone_dead_is_a_draw() {
+        let mut w = match_world();
+        land(&mut w);
+        w.bombers[0].die();
+        w.bombers[1].die();
+        w.step(&[]);
+        assert_eq!(
+            w.phase,
+            Phase::Scores {
+                winner: None,
+                end_of_game: false
+            }
+        );
+        assert!(w.bombers.iter().all(|b| b.points == 0));
+    }
+
+    #[test]
+    fn the_round_waits_for_explosions_to_finish() {
+        let mut w = match_world();
+        land(&mut w);
+        let (tx, ty) = (8, 6);
+        w.objects.push(Object::Explosion(Explosion::new(
+            &mut w.map,
+            &|_, _| false,
+            tx * 40,
+            ty * 40,
+            1,
+            0,
+        )));
+        w.bombers[1].die();
+        for _ in 0..20 {
+            w.step(&[]);
+        }
+        assert_eq!(w.phase, Phase::Playing, "la explosión sigue viva");
+        for _ in 0..40 {
+            w.step(&[]);
+        }
+        assert!(matches!(w.phase, Phase::Scores { .. }));
+    }
+
+    #[test]
+    fn the_world_freezes_on_the_scoreboard_and_confirm_starts_the_next_round() {
+        let mut w = match_world();
+        land(&mut w);
+        w.objects.push(Object::Bomb(Bomb::new(3, 3, 1, 0)));
+        w.bombers[1].die();
+        w.step(&[]);
+        let tick = w.tick;
+        w.step(&[]);
+        assert_eq!(w.tick, tick, "congelado");
+        w.confirm();
+        assert_eq!(w.phase, Phase::Playing);
+        assert!(w.objects.is_empty());
+        assert_eq!(w.time_left(), crate::ROUND_TIME);
+        assert!(w.bombers.iter().all(|b| !b.dead && b.flight.active));
+        assert_eq!(w.bombers[0].points, 1, "los puntos se conservan");
+        assert_eq!(w.bombers[0].cur_bombs, 1);
+    }
+
+    #[test]
+    fn reaching_the_points_goal_ends_the_match_and_resets_points() {
+        let mut w = match_world();
+        land(&mut w);
+        w.bombers[0].points = crate::POINTS_TO_WIN - 1;
+        w.bombers[1].die();
+        w.step(&[]);
+        assert_eq!(
+            w.phase,
+            Phase::Scores {
+                winner: Some(0),
+                end_of_game: true
+            }
+        );
+        w.confirm();
+        assert!(w.bombers.iter().all(|b| b.points == 0));
+    }
+
+    #[test]
+    fn reset_clears_extras_and_diseases_but_keeps_the_score() {
+        let mut w = match_world();
+        land(&mut w);
+        w.bombers[0].gain_extra_skateboard();
+        w.bombers[0].gain_extra_power();
+        w.bombers[0].infect(DiseaseKind::Fast);
+        w.bombers[0].points = 3;
+        w.bombers[0].reset();
+        let b = &w.bombers[0];
+        assert_eq!((b.speed, b.power, b.bombs, b.points), (90, 1, 1, 3));
+        assert!(!b.is_diseased());
+    }
+
+    #[test]
+    fn when_time_runs_out_the_observer_makes_the_floor_vanish() {
+        let mut w = match_world();
+        land(&mut w);
+        w.round_time = 0.0;
+        // Mantiene a los dos vivos y lejos de la acción para observar solo el suelo.
+        let mut seen_vanishing = false;
+        for _ in 0..600 {
+            w.step(&[]);
+            seen_vanishing |= !w.map.vanishing.is_empty();
+            if matches!(w.phase, Phase::Scores { .. }) {
+                break;
+            }
+        }
+        assert!(seen_vanishing, "el observador hizo desaparecer casillas");
+        let holes = (0..17)
+            .flat_map(|x| (0..13).map(move |y| (x, y)))
+            .filter(|&(x, y)| w.map.is_hole(x, y))
+            .count();
+        let arena_holes = {
+            let m = arena();
+            (0..17)
+                .flat_map(|x| (0..13).map(move |y| (x, y)))
+                .filter(|&(x, y)| m.is_hole(x, y))
+                .count()
+        };
+        assert!(holes > arena_holes, "{holes} > {arena_holes}");
+    }
+
+    #[test]
+    fn random_boxes_resolve_to_two_thirds_boxes() {
+        let mut rows = vec![" ".repeat(17); 13];
+        for y in 0..13 {
+            rows[y] = "R".repeat(17);
+        }
+        let src = "x\n2\n".to_owned() + &rows.concat();
+        let w = World::with_seed(Map::parse(&src).unwrap(), 4);
+        let boxes = (0..17)
+            .flat_map(|x| (0..13).map(move |y| (x, y)))
+            .filter(|&(x, y)| w.map.get(x, y) == crate::Tile::Box)
+            .count();
+        let frac = boxes as f64 / (17.0 * 13.0);
+        assert!((frac - 2.0 / 3.0).abs() < 0.1, "frac={frac}");
+    }
+
+    #[test]
+    fn map_list_is_sorted_and_cycles_to_maps_with_enough_slots() {
+        let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../../assets/maps");
+        let mut list = crate::MapList::scan(dir).unwrap();
+        assert_eq!(list.paths.len(), 33);
+        let names: Vec<String> = list
+            .paths
+            .iter()
+            .map(|p| p.file_stem().unwrap().to_string_lossy().to_lowercase())
+            .collect();
+        let mut sorted = names.clone();
+        sorted.sort();
+        assert_eq!(names, sorted);
+        // Pide 8 jugadores: solo sirven los mapas de 8.
+        for _ in 0..5 {
+            let m = list.next_for(8).unwrap();
+            assert!(m.max_players >= 8, "{}", m.name);
+        }
     }
 }

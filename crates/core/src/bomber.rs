@@ -6,6 +6,7 @@
 
 use crate::disease::{Disease, DiseaseKind};
 use crate::extra::ExtraKind;
+use crate::flight::Flight;
 use crate::map::{Dir, TILE_PIXELS};
 use crate::movement::{advance, Env, Mover, Pos};
 
@@ -39,6 +40,12 @@ pub struct Bomber {
     pub power: i32,
     pub kills: i32,
     pub deaths: i32,
+    /// Rondas ganadas en la partida (`inc_points`).
+    pub points: i32,
+    /// Posición de salida de la ronda en píxeles (`orig_x`, `orig_y`).
+    pub orig: (i32, i32),
+    /// Vuelo de entrada desde el centro del mapa al inicio de cada ronda.
+    pub flight: Flight,
     pub can_kick: bool,
     pub gloves: i32,
     pub skateboards: i32,
@@ -83,6 +90,9 @@ impl Bomber {
             power: 1,
             kills: 0,
             deaths: 0,
+            points: 0,
+            orig: (orig_x, orig_y),
+            flight: Flight::default(),
             can_kick: false,
             gloves: 0,
             skateboards: 0,
@@ -100,6 +110,59 @@ impl Bomber {
             extra_gloves: 0,
             drops: Vec::new(),
         }
+    }
+
+    /// `Bomber::reset()`: estado de inicio de ronda (conserva puntos, muertes y asesinatos).
+    pub fn reset(&mut self) {
+        // `disease->stop()` revierte el efecto antes de descartarla.
+        if let Some(d) = self.disease.take() {
+            self.stop_disease(d.kind);
+        }
+        self.dir = if self.orig.0 > 300 {
+            Dir::Left
+        } else {
+            Dir::Right
+        };
+        self.dead = false;
+        self.falling = false;
+        self.fallen_down = false;
+        self.fall_countdown = 0.0;
+        self.flight = Flight::default();
+        self.extra_bombs = 0;
+        self.extra_power = 0;
+        self.extra_skateboards = 0;
+        self.extra_kick = 0;
+        self.extra_gloves = 0;
+        self.drops.clear();
+        // Config::start_* del original.
+        self.skateboards = 0;
+        self.speed = 90;
+        self.can_kick = false;
+        self.cur_bombs = 1;
+        self.bombs = 1;
+        self.power = 1;
+        self.gloves = 0;
+        (self.x, self.y) = (self.orig.0 as f32, self.orig.1 as f32);
+        self.anim_count = 0.0;
+    }
+
+    /// Inicio de ronda: sale volando desde el centro del mapa hasta su posición de salida
+    /// (300 px/s la primera ronda, 200 las demás) con los controles apagados hasta aterrizar.
+    pub fn begin_round(&mut self, fly_speed: i32) {
+        (self.x, self.y) = (350.0, 270.0);
+        self.flight = Flight::default();
+        self.flight.start((350.0, 270.0), self.orig, fly_speed);
+        self.active = false;
+    }
+
+    /// `Observer::act` los enciende cuando todos han aterrizado.
+    pub fn activate(&mut self) {
+        self.active = true;
+    }
+
+    /// ¿Cuenta como presente en su casilla? Vivo y no en vuelo (`maptilize_objects`).
+    pub fn on_ground(&self) -> bool {
+        !self.dead && !self.flight.active
     }
 
     /// Casilla (en tiles) sobre la que está el bomber: `get_maptile()` del original.
@@ -283,6 +346,12 @@ impl Bomber {
         let mut action = Action::default();
         if self.dead {
             return action;
+        }
+        // GameObject::act: en vuelo (entrada de ronda) avanza el vuelo sin chocar con nada.
+        if self.flight.active {
+            let mut pos = (self.x, self.y);
+            self.flight.advance(&mut pos, dt, None);
+            (self.x, self.y) = pos;
         }
         // Disease::act: la enfermedad se cura sola al agotarse el contador.
         if let Some(mut d) = self.disease.take() {
