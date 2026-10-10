@@ -57,5 +57,5 @@ enum (`CurrentSurfaceTexture`), `VertexState.buffers` es `&[Option<_>]`, `bind_g
 
 ## Hoja de ruta
 
-1. ~~Mapa con texturas~~ 2. ~~Bomber (movimiento + colisión + teclado + sprites)~~ 3. Bombas y explosiones
+1. ~~Mapa con texturas~~ 2. ~~Bomber (movimiento + colisión + teclado + sprites)~~ 3. ~~Bombas y explosiones~~
 4. Extras y enfermedades, hielo/flechas/trampas 5. Menús, IA, sonido 6. Partículas (compute), sprites IA.

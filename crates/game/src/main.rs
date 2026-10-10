@@ -19,6 +19,10 @@ struct Sprites {
     addons: Sheet,
     /// Skins 0 (snake) y 1 (tux): celdas de 40x60 (Resources::Bombers).
     bombers: [Sheet; 2],
+    /// bombs.png: 4 frames por color de bomber (celdas de 40x40, 8 columnas).
+    bombs: Sheet,
+    /// explosion2.png: 7 columnas (tipo de segmento) x 3 filas (frame de animación).
+    explosion: Sheet,
 }
 
 /// Offset de dibujo de los bombers de 40x60 (Bomber::Bomber: offset_x = 60, offset_y = 11).
@@ -46,6 +50,8 @@ struct App {
     world: World,
     sprites: Option<Sprites>,
     keys: HashSet<KeyCode>,
+    /// Pulsaciones de bomba pendientes de consumir en el próximo tick (una por flanco).
+    bomb_latch: [bool; 2],
     gfx: Option<(Arc<Window>, Renderer)>,
     last: Instant,
     acc: f64,
@@ -71,7 +77,15 @@ impl App {
                     Tile::None => continue,
                     Tile::Ground => (0, None),
                     Tile::Wall => (1, None),
-                    Tile::Box => (2, None),
+                    // Caja alcanzada: sprite_nr++ (MapTile_Box::destroy).
+                    Tile::Box => (
+                        if self.world.map.is_crumbling(x as i32, y as i32) {
+                            3
+                        } else {
+                            2
+                        },
+                        None,
+                    ),
                     Tile::Ice => (0, Some(0)),
                     // Orden del original: DOWN=0, LEFT=1, UP=2, RIGHT=3; los addons de flecha empiezan en 1.
                     Tile::Arrow(d) => (
@@ -93,7 +107,63 @@ impl App {
                 }
             }
         }
-        for (b, sheet) in self.world.bombers.iter().zip(sp.bombers.iter().cycle()) {
+        // Orden de z del original: explosiones (2000) < bombas (3000+y) < bombers (4000+y).
+        let at = |tx: i32, ty: i32| (ox + (tx * 40) as f32, oy + (ty * 40) as f32);
+        for e in self.world.explosions() {
+            // Índices de segmento: Explosion.h (EXPLODE_LEFT..EXPLODE_X); +anim (0, 7 o 14).
+            let (left, h, right, up, v, down, center) = (0, 1, 2, 3, 4, 5, 6);
+            let a = e.anim();
+            let (cx, cy) = at(e.tx, e.ty);
+            r.sheet_sprite(&sp.explosion, center + a, cx, cy);
+            for i in 1..=e.left {
+                let (px, py) = at(e.tx - i, e.ty);
+                r.sheet_sprite(
+                    &sp.explosion,
+                    if i == e.power { left } else { h } + a,
+                    px,
+                    py,
+                );
+            }
+            for i in 1..=e.right {
+                let (px, py) = at(e.tx + i, e.ty);
+                r.sheet_sprite(
+                    &sp.explosion,
+                    if i == e.power { right } else { h } + a,
+                    px,
+                    py,
+                );
+            }
+            for i in 1..=e.up {
+                let (px, py) = at(e.tx, e.ty - i);
+                r.sheet_sprite(&sp.explosion, if i == e.power { up } else { v } + a, px, py);
+            }
+            for i in 1..=e.down {
+                let (px, py) = at(e.tx, e.ty + i);
+                r.sheet_sprite(
+                    &sp.explosion,
+                    if i == e.power { down } else { v } + a,
+                    px,
+                    py,
+                );
+            }
+        }
+        for b in self.world.bombs() {
+            // sprite_nr = color * 4 + frame (color = skin del bomber que la puso).
+            let color = b.owner as u32;
+            r.sheet_sprite(
+                &sp.bombs,
+                color * 4 + b.frame(),
+                ox + b.x as f32,
+                oy + b.y as f32,
+            );
+        }
+        for (b, sheet) in self
+            .world
+            .bombers
+            .iter()
+            .zip(sp.bombers.iter().cycle())
+            .filter(|(b, _)| !b.dead)
+        {
             r.sheet_sprite(
                 sheet,
                 b.sprite_nr(),
@@ -104,17 +174,21 @@ impl App {
         r.render();
     }
 
-    fn inputs(&self) -> Vec<Input> {
+    /// La tecla de bomba actúa solo al pulsar (Controller_Keyboard::update: flanco de subida).
+    fn inputs(&mut self) -> Vec<Input> {
+        let keys = &self.keys;
+        let latch = &mut self.bomb_latch;
         KEYMAPS
             .iter()
-            .map(|k| {
-                let down = |i: usize| self.keys.contains(&k[i]);
+            .zip(latch.iter_mut())
+            .map(|(k, bomb)| {
+                let down = |i: usize| keys.contains(&k[i]);
                 Input {
                     left: down(0),
                     right: down(1),
                     up: down(2),
                     down: down(3),
-                    bomb: down(4),
+                    bomb: std::mem::take(bomb),
                 }
             })
             .collect()
@@ -140,6 +214,10 @@ impl ApplicationHandler for App {
             load(&mut renderer, "maptiles.png"),
             load(&mut renderer, "maptile_addons.png"),
         );
+        let (bombs_tex, expl_tex) = (
+            load(&mut renderer, "bombs.png"),
+            load(&mut renderer, "explosion2.png"),
+        );
         let (snake, tux) = (
             load(&mut renderer, "bomber_snake.png"),
             load(&mut renderer, "bomber_tux.png"),
@@ -147,6 +225,8 @@ impl ApplicationHandler for App {
         self.sprites = Some(Sprites {
             maptiles: renderer.sheet(mt, 40.0, 40.0),
             addons: renderer.sheet(ad, 40.0, 40.0),
+            bombs: renderer.sheet(bombs_tex, 40.0, 40.0),
+            explosion: renderer.sheet(expl_tex, 40.0, 40.0),
             bombers: [
                 renderer.sheet(snake, 40.0, 60.0),
                 renderer.sheet(tux, 40.0, 60.0),
@@ -164,6 +244,13 @@ impl ApplicationHandler for App {
                     if event.state.is_pressed() {
                         if code == KeyCode::Escape {
                             el.exit();
+                        }
+                        if !event.repeat {
+                            for (i, k) in KEYMAPS.iter().enumerate() {
+                                if code == k[4] {
+                                    self.bomb_latch[i] = true;
+                                }
+                            }
                         }
                         self.keys.insert(code);
                     } else {
@@ -210,6 +297,7 @@ fn main() {
         world,
         sprites: None,
         keys: HashSet::new(),
+        bomb_latch: [false; 2],
         gfx: None,
         last: Instant::now(),
         acc: 0.0,
