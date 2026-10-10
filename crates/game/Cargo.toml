@@ -1,0 +1,11 @@
+[package]
+license.workspace = true
+name = "cb-game"
+version = "0.1.0"
+edition.workspace = true
+
+[dependencies]
+cb-core = { version = "0.1.0", path = "../core" }
+cb-render = { version = "0.1.0", path = "../render" }
+pollster = "1.0.1"
+winit = "0.30.13"
