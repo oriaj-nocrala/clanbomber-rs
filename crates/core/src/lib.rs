@@ -1,6 +1,20 @@
 //! Lógica de ClanBomber sin dependencias gráficas.
 //! Determinista y de paso fijo, pensada para testearse contra el original.
 
+// Es un port fiel: se conserva la estructura de bucles del original (índices sobre la cuadrícula,
+// `loop` con `break` al final de la cola...) aunque clippy sugiera otra forma.
+#![allow(clippy::needless_range_loop, clippy::while_let_loop)]
+// Las pruebas escriben posiciones como `1 * 40` (casilla 1) para que se lean como en el mapa.
+#![cfg_attr(
+    test,
+    allow(
+        clippy::identity_op,
+        clippy::field_reassign_with_default,
+        clippy::bool_comparison,
+        clippy::nonminimal_bool
+    )
+)]
+
 pub mod ai;
 pub mod bomb;
 pub mod bomber;

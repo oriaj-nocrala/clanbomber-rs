@@ -111,7 +111,7 @@ impl From<GameEvent> for Sfx {
 }
 
 fn wavs_dir() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets/wavs")
+    crate::paths::assets_dir().join("wavs")
 }
 
 /// Decodifica todos los efectos a memoria.

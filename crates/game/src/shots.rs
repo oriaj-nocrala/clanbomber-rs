@@ -63,8 +63,10 @@ type Seat = (u8, ControllerKind, u8);
 
 /// Configuración con esos jugadores activos y el resto apagados.
 fn config_with(seats: &[Seat], theme: i32) -> Config {
-    let mut c = Config::default();
-    c.theme = theme;
+    let mut c = Config {
+        theme,
+        ..Config::default()
+    };
     for (i, b) in c.bombers.iter_mut().enumerate() {
         b.enabled = i < seats.len();
         if let Some(&(skin, controller, team)) = seats.get(i) {

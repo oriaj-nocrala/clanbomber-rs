@@ -99,6 +99,8 @@ impl Flight {
     }
 
     /// Escala de dibujo durante el vuelo (`GameObject::show`): crece hasta mitad de trayecto.
+    /// El original usa `3.14f` y no π: se conserva para que las animaciones coincidan.
+    #[allow(clippy::approx_constant)]
     pub fn scale(&self) -> f32 {
         (self.progress * 3.14).sin() * (1.3 / self.speed) + 1.0
     }

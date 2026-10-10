@@ -8,6 +8,7 @@ mod joystick;
 mod map_editor;
 mod map_select;
 mod menu;
+mod paths;
 mod player_setup;
 mod screen;
 mod shots;
@@ -116,7 +117,7 @@ struct App {
 
 /// Mapas que trae el juego (de solo lectura).
 fn maps_dir() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/maps")
+    paths::assets_dir().join("maps")
 }
 
 /// Mapas del usuario (`$XDG_DATA_HOME/clanbomber-rs/maps` o `~/.local/share/...`): los que crea el

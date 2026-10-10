@@ -183,7 +183,7 @@ fn draw_game(r: &mut Renderer, a: &Assets, w: &World, players: &[Player]) {
             let (mut px, mut py) = (ox + x as f32 * t, oy + y as f32 * t);
             if w.shake > 0 {
                 // Temblor: cada casilla se desplaza entre -2 y 2 px al azar en cada fotograma.
-                let h = (w.tick.wrapping_mul(2654435761) ^ (y * 31 + x) as u64 * 40503) as u32;
+                let h = (w.tick.wrapping_mul(2654435761) ^ ((y * 31 + x) as u64 * 40503)) as u32;
                 px += (h % 5) as f32 - 2.0;
                 py += ((h / 5) % 5) as f32 - 2.0;
             }
@@ -576,6 +576,7 @@ fn draw_scores(
 
 /// `Map::show_preview`: el mapa entero en miniatura con esquina en `(x, y)` y casillas de
 /// `40 * factor` píxeles. Las casillas `R` se enseñan como cajas.
+#[allow(clippy::too_many_arguments)]
 pub fn draw_map_preview(
     r: &mut Renderer,
     a: &Assets,

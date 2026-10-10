@@ -45,17 +45,13 @@ pub struct Assets {
     pub font_small: Font,
 }
 
-fn assets_dir() -> String {
-    format!("{}/../../assets", env!("CARGO_MANIFEST_DIR"))
-}
-
 impl Assets {
     pub fn load(r: &mut Renderer) -> Assets {
-        let dir = assets_dir();
+        let dir = crate::paths::assets_dir();
         let mut tex = |name: &str| {
-            let path = format!("{dir}/pics/{name}");
+            let path = dir.join("pics").join(name);
             r.load_texture(&path)
-                .unwrap_or_else(|e| panic!("{path}: {e}"))
+                .unwrap_or_else(|e| panic!("{}: {e}", path.display()))
         };
         let (maptiles, addons) = (tex("maptiles.png"), tex("maptile_addons.png"));
         let (bombs, explosion, extras) =
@@ -93,9 +89,9 @@ impl Assets {
         );
 
         let font = |r: &mut Renderer, px: f32| {
-            let path = format!("{dir}/fonts/DejaVuSans-Bold.ttf");
+            let path = dir.join("fonts/DejaVuSans-Bold.ttf");
             r.load_font(&path, px)
-                .unwrap_or_else(|e| panic!("{path}: {e:?}"))
+                .unwrap_or_else(|e| panic!("{}: {e:?}", path.display()))
         };
         let (font_big, font_small) = (font(r, 28.0), font(r, 18.0));
 
