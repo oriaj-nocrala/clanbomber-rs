@@ -27,7 +27,7 @@ pub struct Bomber {
     /// Píxeles por segundo: `90 + skateboards * 40` (Bomber::reset).
     pub speed: i32,
     /// Fracción de píxel acumulada entre ticks (`remainder` del original).
-    remainder: f32,
+    pub remainder: f32,
     /// Contador de animación; el frame es su parte entera (1..=8 al caminar).
     pub anim_count: f32,
     pub dead: bool,

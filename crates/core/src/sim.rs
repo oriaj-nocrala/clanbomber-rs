@@ -1,7 +1,7 @@
 use crate::bomb::{Bomb, Explosion, Object};
 use crate::bomber::{Action, Bomber, Input};
 use crate::extra::{roll_extra, Extra, ExtraConfig, ExtraKind};
-use crate::map::{Map, TILE_PIXELS};
+use crate::map::{Dir, Map, Tile, MAP_HEIGHT, MAP_WIDTH, TILE_PIXELS};
 use crate::movement::{advance, Env, Mover, Pos};
 use crate::rng::Rng;
 
@@ -19,6 +19,24 @@ pub struct World {
     pub tick: u64,
     pub rng: Rng,
     pub extra_config: ExtraConfig,
+    /// Estado de cada casilla de flecha (`MapTile_Arrow::old_bomb`, `chill_countdown`).
+    arrows: Vec<ArrowState>,
+    /// Bombas retenidas por una trampa, fuera de `objects` (`MapTile_Trap::bombs`).
+    trapped: Vec<Trapped>,
+}
+
+struct ArrowState {
+    tile: (usize, usize),
+    dir: Dir,
+    /// ¿Había una bomba en la casilla el tick anterior? (`old_bomb != NULL`)
+    old_bomb: bool,
+    chill: f32,
+}
+
+struct Trapped {
+    bomb: Bomb,
+    tile: (usize, usize),
+    countdown: f32,
 }
 
 /// Vista de solo lectura para las consultas de colisión (`tile->bomb`, `has_bomber`).
@@ -74,7 +92,22 @@ impl World {
 
     /// La semilla fija todo lo aleatorio (extras que sueltan las cajas).
     pub fn with_seed(map: Map, seed: u64) -> Self {
+        let mut arrows = Vec::new();
+        for y in 0..MAP_HEIGHT {
+            for x in 0..MAP_WIDTH {
+                if let Tile::Arrow(dir) = map.get(x as i32, y as i32) {
+                    arrows.push(ArrowState {
+                        tile: (x, y),
+                        dir,
+                        old_bomb: false,
+                        chill: 0.0,
+                    });
+                }
+            }
+        }
         World {
+            arrows,
+            trapped: Vec::new(),
             map,
             bombers: Vec::new(),
             objects: Vec::new(),
@@ -141,6 +174,7 @@ impl World {
         for (x, y) in self.map.act(TICK_DT) {
             self.spawn_extra(x as i32 * 40, y as i32 * 40);
         }
+        self.tiles_act();
         self.fall_into_holes();
 
         // Los objetos creados durante este tick (explosiones) actúan a partir del siguiente.
@@ -173,6 +207,209 @@ impl World {
 
     fn env<'a>(map: &'a Map, view: &'a View<'a>) -> Env<'a> {
         Env { map, q: view }
+    }
+
+    /// `MapTile::act` de hielo, flechas y trampas, en el orden del mapa (fila a fila).
+    /// Los objetos que hay en cada casilla se toman al empezar (`maptilize_objects`).
+    fn tiles_act(&mut self) {
+        // Casilla de cada bomber vivo y de cada objeto que no vuela.
+        let bomber_tiles: Vec<Option<(i32, i32)>> = self
+            .bombers
+            .iter()
+            .map(|b| (!b.dead).then(|| b.tile()))
+            .collect();
+        let bomb_tiles: Vec<Option<((i32, i32), bool)>> = self
+            .objects
+            .iter()
+            .map(|o| match o {
+                Object::Bomb(b) if !b.flight.active => Some((b.tile(), b.falling)),
+                _ => None,
+            })
+            .collect();
+        let mut trapped_now: Vec<usize> = Vec::new();
+
+        for y in 0..MAP_HEIGHT {
+            for x in 0..MAP_WIDTH {
+                let t = (x as i32, y as i32);
+                match self.map.get(t.0, t.1) {
+                    Tile::Ice => self.ice_act(t, &bomber_tiles, &bomb_tiles),
+                    Tile::Arrow(_) => {
+                        // `tile->bomb`: la última bomba apoyada (no cayendo) en la casilla.
+                        let bomb = bomb_tiles
+                            .iter()
+                            .rposition(|b| matches!(b, Some((bt, false)) if *bt == t));
+                        self.arrow_act((x, y), bomb);
+                    }
+                    Tile::Trap => {
+                        for (i, bt) in bomb_tiles.iter().enumerate() {
+                            if matches!(bt, Some((tt, _)) if *tt == t) {
+                                trapped_now.push(i);
+                            }
+                        }
+                        self.trap_shoot((x, y));
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        // Las bombas capturadas salen de la lista de objetos (de mayor a menor índice).
+        trapped_now.sort_unstable();
+        for &i in trapped_now.iter().rev() {
+            if let Object::Bomb(b) = self.objects.remove(i) {
+                let tile = (
+                    ((b.get_x() + 20) / 40) as usize,
+                    ((b.get_y() + 20) / 40) as usize,
+                );
+                self.trapped.push(Trapped {
+                    bomb: b,
+                    tile,
+                    countdown: 1.0,
+                });
+            }
+        }
+    }
+
+    /// `MapTile_Ice::act`: lo que tiene dirección sigue deslizándose a 80 px/s extra.
+    /// Un bomber siempre mira hacia algún lado, así que resbala hacia donde mira.
+    fn ice_act(
+        &mut self,
+        t: (i32, i32),
+        bomber_tiles: &[Option<(i32, i32)>],
+        bomb_tiles: &[Option<((i32, i32), bool)>],
+    ) {
+        for i in 0..self.bombers.len() {
+            if bomber_tiles[i] != Some(t) {
+                continue;
+            }
+            let mut me = self.bombers[i].clone();
+            let kick = {
+                let view = View {
+                    objects: &self.objects,
+                    bombers: &self.bombers,
+                };
+                let env = Self::env(&self.map, &view);
+                let mover = Mover {
+                    can_pass_bomber: true,
+                    can_kick: me.can_kick,
+                    self_bomb: None,
+                };
+                let mut pos = Pos {
+                    x: &mut me.x,
+                    y: &mut me.y,
+                    remainder: &mut me.remainder,
+                };
+                advance(&mut pos, 80, TICK_DT, me.dir, &mover, &env).kick
+            };
+            self.bombers[i] = me;
+            self.apply(
+                i,
+                Action {
+                    kick,
+                    ..Action::default()
+                },
+            );
+        }
+        for i in 0..self.objects.len() {
+            if !matches!(bomb_tiles.get(i), Some(Some((bt, _))) if *bt == t) {
+                continue;
+            }
+            let Object::Bomb(orig) = &self.objects[i] else {
+                continue;
+            };
+            let Some(dir) = orig.cur_dir else { continue };
+            let mut b = orig.clone();
+            let moved = {
+                let view = View {
+                    objects: &self.objects,
+                    bombers: &self.bombers,
+                };
+                let env = Self::env(&self.map, &view);
+                let mover = Mover {
+                    can_pass_bomber: false,
+                    can_kick: false,
+                    self_bomb: Some(i),
+                };
+                let mut pos = Pos {
+                    x: &mut b.x,
+                    y: &mut b.y,
+                    remainder: &mut b.remainder,
+                };
+                advance(&mut pos, 80, TICK_DT, dir, &mover, &env).moved
+            };
+            if !moved {
+                b.stop();
+            }
+            self.objects[i] = Object::Bomb(b);
+        }
+    }
+
+    /// `MapTile_Arrow::act`: empuja la bomba en la dirección de la flecha. Una bomba que
+    /// viene de frente se detiene, espera 0.5 s y luego sale en el sentido de la flecha.
+    fn arrow_act(&mut self, tile: (usize, usize), bomb: Option<usize>) {
+        let Some(k) = self.arrows.iter().position(|a| a.tile == tile) else {
+            return;
+        };
+        let (dir, mut chill, old_bomb) = (
+            self.arrows[k].dir,
+            self.arrows[k].chill,
+            self.arrows[k].old_bomb,
+        );
+        match bomb {
+            Some(i) => {
+                if let Object::Bomb(b) = &mut self.objects[i] {
+                    if b.stopped {
+                        b.snap();
+                    }
+                    if let Some(cur) = b.cur_dir {
+                        // Direcciones del original: DOWN=0, LEFT=1, UP=2, RIGHT=3.
+                        if cur != dir && (cur.index() + dir.index()) % 2 == 0 && !old_bomb {
+                            b.snap();
+                            b.stop();
+                            chill = 0.5;
+                        }
+                    }
+                    if chill > 0.0 {
+                        chill -= TICK_DT;
+                    } else {
+                        b.kick(dir);
+                    }
+                }
+            }
+            None => chill = 0.0,
+        }
+        self.arrows[k].chill = chill;
+        self.arrows[k].old_bomb = bomb.is_some();
+    }
+
+    /// `MapTile_Trap::act`: la bomba que cae en la trampa desaparece 1 s y sale disparada a
+    /// una casilla libre al azar, por encima de los muros, para explotar casi al aterrizar.
+    fn trap_shoot(&mut self, tile: (usize, usize)) {
+        let mut ready = Vec::new();
+        for (k, e) in self.trapped.iter_mut().enumerate() {
+            if e.tile != tile {
+                continue;
+            }
+            if e.countdown <= 0.0 {
+                ready.push(k);
+            } else {
+                e.countdown -= TICK_DT;
+            }
+        }
+        for &k in ready.iter().rev() {
+            let mut e = self.trapped.remove(k);
+            match self.get_passable() {
+                Some(dest) => {
+                    e.bomb.fly_over_walls = true;
+                    e.bomb.countdown = 0.01;
+                    e.bomb.speed = 200;
+                    e.bomb.fly_to_tile(dest);
+                    self.objects.push(Object::Bomb(e.bomb));
+                }
+                // Sin casilla libre la bomba se destruye y el bomber recupera el cupo.
+                None => self.bombers[e.bomb.owner].cur_bombs += 1,
+            }
+        }
     }
 
     /// `Bomber::infect_others`: un bomber enfermo contagia a los sanos que comparten casilla.
@@ -379,6 +616,7 @@ impl World {
             return;
         };
         let mut b = orig.clone();
+        b.stopped = false;
 
         // GameObject::act: volando solo avanza el vuelo; si no, cae si toca.
         if b.flight.active {
@@ -398,6 +636,7 @@ impl World {
             if b.flight.progress == 1.0 {
                 // Acaba de aterrizar: si cae sobre otra bomba, rebota una casilla más.
                 b.flight.progress = 0.0;
+                b.fly_over_walls = false;
                 let (tx, ty) = b.tile();
                 match (view.bomb_at(tx, ty, Some(i)), b.cur_dir) {
                     (Some(_), Some(dir)) => b.throw(dir, 1),
@@ -525,6 +764,7 @@ impl World {
 mod tests {
     use super::*;
     use crate::disease::DiseaseKind;
+    use crate::map::Dir;
     use crate::map::Map;
 
     fn open_world() -> World {
@@ -980,5 +1220,98 @@ mod tests {
             w.step(&[]);
         }
         assert_eq!(w.extras().count(), 1);
+    }
+
+    fn row_of(c: char, xs: std::ops::RangeInclusive<usize>) -> Vec<(usize, usize, char)> {
+        xs.map(|x| (x, 5, c)).collect()
+    }
+
+    #[test]
+    fn ice_keeps_you_sliding_in_the_direction_you_face() {
+        let mut w = world_with(&row_of('S', 3..=12));
+        w.bombers[1] = Bomber::new(1 * 40, 1 * 40);
+        let x0 = w.bombers[0].x;
+        for _ in 0..30 {
+            w.step(&[]);
+        }
+        // Mira a la derecha: 30 ticks a 80 px/s son unos 40 px sin tocar nada.
+        assert!(
+            (w.bombers[0].x - x0 - 40.0).abs() <= 2.0,
+            "x={}",
+            w.bombers[0].x
+        );
+    }
+
+    #[test]
+    fn no_ice_no_sliding() {
+        let mut w = world_with(&[]);
+        let x0 = w.bombers[0].x;
+        for _ in 0..30 {
+            w.step(&[]);
+        }
+        assert_eq!(w.bombers[0].x, x0);
+    }
+
+    #[test]
+    fn arrow_pushes_a_bomb_along() {
+        let mut w = world_with(&[(5, 5, '>')]);
+        w.bombers = vec![Bomber::new(1 * 40, 1 * 40), Bomber::new(1 * 40, 3 * 40)];
+        let mut b = Bomb::new(5, 5, 1, 0);
+        b.countdown = 100.0;
+        w.objects.push(Object::Bomb(b));
+        for _ in 0..30 {
+            w.step(&[]);
+        }
+        assert!(w.bombs().next().unwrap().get_x() > 5 * 40 + 40);
+        for _ in 0..300 {
+            w.step(&[]);
+        }
+        assert_eq!(w.bombs().next().unwrap().get_x(), 16 * 40, "hasta el borde");
+    }
+
+    #[test]
+    fn arrow_stops_an_oncoming_bomb_then_sends_it_back() {
+        let mut w = world_with(&[(5, 5, '>')]);
+        w.bombers = vec![Bomber::new(1 * 40, 1 * 40), Bomber::new(1 * 40, 3 * 40)];
+        let mut b = Bomb::new(6, 5, 1, 0);
+        b.countdown = 100.0;
+        b.cur_dir = Some(Dir::Left);
+        w.objects.push(Object::Bomb(b));
+        for _ in 0..25 {
+            w.step(&[]);
+        }
+        let b = w.bombs().next().unwrap();
+        assert_eq!(
+            (b.get_x(), b.cur_dir),
+            (5 * 40, None),
+            "frenada y alineada en la flecha"
+        );
+        for _ in 0..60 {
+            w.step(&[]);
+        }
+        assert!(
+            w.bombs().next().unwrap().get_x() > 6 * 40,
+            "tras 0.5 s sale hacia la derecha"
+        );
+    }
+
+    #[test]
+    fn trap_swallows_the_bomb_and_shoots_it_somewhere_to_explode() {
+        let mut w = world_with(&[(5, 5, 'o')]);
+        w.bombers = vec![Bomber::new(1 * 40, 1 * 40), Bomber::new(1 * 40, 3 * 40)];
+        w.bombers[0].cur_bombs = 0; // la bomba de abajo ya está "puesta"
+        let mut b = Bomb::new(5, 5, 1, 0);
+        b.countdown = 100.0;
+        w.objects.push(Object::Bomb(b));
+        w.step(&[]);
+        w.step(&[]);
+        assert_eq!(w.bombs().count(), 0, "la trampa la retiene");
+        let mut exploded = false;
+        for _ in 0..600 {
+            w.step(&[]);
+            exploded |= w.explosions().count() > 0;
+        }
+        assert!(exploded, "sale disparada y explota casi al aterrizar");
+        assert_eq!(w.bombers[0].cur_bombs, 1, "el bomber recupera su bomba");
     }
 }

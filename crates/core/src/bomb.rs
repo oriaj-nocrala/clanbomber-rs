@@ -34,6 +34,10 @@ pub struct Bomb {
     pub speed: i32,
     pub remainder: f32,
     pub flight: Flight,
+    /// `can_fly_over_walls`: solo la trampa lanza bombas por encima de los muros.
+    pub fly_over_walls: bool,
+    /// `stopped`: la bomba acaba de frenar este tick (las flechas la realinean).
+    pub stopped: bool,
     pub falling: bool,
     pub fall_countdown: f32,
     pub fallen_down: bool,
@@ -54,6 +58,8 @@ impl Bomb {
             speed: BOMB_SPEED,
             remainder: 0.0,
             flight: Flight::default(),
+            fly_over_walls: false,
+            stopped: false,
             falling: false,
             fall_countdown: 0.0,
             fallen_down: false,
@@ -101,6 +107,7 @@ impl Bomb {
 
     /// `Bomb::throww(dir, fields)`: vuela `fields` casillas (4 al lanzarla con el guante).
     pub fn throw(&mut self, dir: Dir, fields: i32) {
+        self.fly_over_walls = false;
         if fields > 0 && !self.flight.active {
             self.cur_dir = Some(dir);
             let (x, y) = (self.get_x(), self.get_y());
@@ -120,10 +127,11 @@ impl Bomb {
         }
     }
 
-    /// `continue_flying` con `can_fly_over_walls == false`.
+    /// `continue_flying`: los muros frenan el vuelo salvo con `fly_over_walls`.
     pub fn continue_flying(&mut self, map: &Map, dt: f32) {
         let mut pos = (self.x, self.y);
-        self.flight.advance(&mut pos, dt, Some(map));
+        let walls = if self.fly_over_walls { None } else { Some(map) };
+        self.flight.advance(&mut pos, dt, walls);
         (self.x, self.y) = pos;
     }
 
@@ -145,13 +153,25 @@ impl Bomb {
         }
     }
 
+    /// `GameObject::snap()`: alinea con la casilla más cercana.
+    pub fn snap(&mut self) {
+        self.x = (((self.get_x() + 20) / T) * T) as f32;
+        self.y = (((self.get_y() + 20) / T) * T) as f32;
+    }
+
     /// `Bomb::stop()`: se detiene y se alinea con la casilla.
     pub fn stop(&mut self) {
+        self.stopped = true;
         if !self.flight.active {
             self.cur_dir = None;
-            self.x = (((self.get_x() + 20) / T) * T) as f32;
-            self.y = (((self.get_y() + 20) / T) * T) as f32;
+            self.snap();
         }
+    }
+
+    /// `GameObject::fly_to(MapTile*)`: sale despedida hacia la esquina de la casilla a su
+    /// velocidad actual (la trampa la fija en 200 px/s).
+    pub fn fly_to_tile(&mut self, tile: (usize, usize)) {
+        self.fly_to(tile.0 as i32 * T, tile.1 as i32 * T);
     }
 }
 

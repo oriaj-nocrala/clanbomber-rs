@@ -64,4 +64,4 @@ enum (`CurrentSurfaceTexture`), `VertexState.buffers` es `&[Option<_>]`, `bind_g
 
 1. ~~Mapa con texturas~~ 2. ~~Bomber (movimiento + colisión + teclado + sprites)~~ 3. ~~Bombas y explosiones~~
 4. Extras (hecho: caída de cajas, recogida, destrucción, patada, guante/lanzar, caída por agujeros,
-   enfermedades, vuelo de extras) → pendiente: hielo/flechas/trampas, cadáveres, fin de ronda 5. Menús, IA, sonido 6. Partículas (compute), sprites IA.
+   enfermedades, vuelo de extras, hielo/flechas/trampas) → pendiente: cadáveres, fin de ronda 5. Menús, IA, sonido 6. Partículas (compute), sprites IA.
