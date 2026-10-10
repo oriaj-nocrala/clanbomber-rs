@@ -90,6 +90,13 @@ impl Credits {
     }
 
     /// Arriba/abajo aceleran el desplazamiento; el texto se detiene en los extremos.
+    /// Avanza `secs` segundos de desplazamiento normal (para las capturas de pantalla).
+    pub fn advance(&mut self, secs: f32) {
+        for _ in 0..(secs * 60.0) as usize {
+            self.update(1.0 / 60.0, true);
+        }
+    }
+
     /// `kids_mode` apaga la sangre.
     pub fn update(&mut self, dt: f32, kids_mode: bool) -> Tick {
         let speed = if self.up {

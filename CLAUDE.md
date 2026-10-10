@@ -11,7 +11,8 @@ En Arch: `pacman -S alsa-lib libopenmpt pkgconf systemd-libs`.
 ## Comandos
 
 ```bash
-cargo run -p cb-game [assets/maps/X.map]   # sin argumento carga Arena.map; Esc cierra
+cargo run -p cb-game                         # el juego (empieza en la intro)
+cargo run -p cb-game -- --screenshots docs/img   # recorre las pantallas y guarda PNG + GIF (render offscreen)
 cargo test                                  # incluye parseo de los 33 mapas
 cargo fmt
 ```

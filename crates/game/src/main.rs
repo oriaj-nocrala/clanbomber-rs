@@ -10,6 +10,7 @@ mod map_select;
 mod menu;
 mod player_setup;
 mod screen;
+mod shots;
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
@@ -107,6 +108,10 @@ struct App {
     /// Música de fondo (F2); como en el original, empieza apagada en cada arranque.
     play_music: bool,
     paused: bool,
+    /// Guion de capturas (`--screenshots DIR`); sin él, `None`.
+    shots: Option<shots::Shots>,
+    /// El guion lleva el reloj de la partida: no se avanza en tiempo real.
+    scripted: bool,
 }
 
 /// Mapas que trae el juego (de solo lectura).
@@ -147,23 +152,38 @@ impl App {
 
     /// `Start Local`: monta el mundo con los jugadores activos. No hace nada si no hay rivales.
     fn start_game(&mut self) {
-        if self.config.number_of_opponents() < 2 {
-            return;
+        let (config, seed) = (self.config.clone(), clock_seed());
+        self.launch(config, seed, None);
+    }
+
+    /// Monta el mundo con los jugadores activos de `config`. `map` fuerza el primer mapa por
+    /// nombre. Devuelve `false` (sin cambiar nada) si no hay al menos dos rivales o mapas.
+    fn launch(&mut self, config: Config, seed: u64, map: Option<&str>) -> bool {
+        if config.number_of_opponents() < 2 {
+            return false;
         }
-        let players: Vec<_> = self.config.enabled_bombers().cloned().collect();
-        let seed = clock_seed();
+        let players: Vec<_> = config.enabled_bombers().cloned().collect();
         let Some(mut list) = all_maps() else {
-            return;
+            return false;
         };
         if list.paths.is_empty() {
-            return;
+            return false;
         }
-        list.disabled = self.config.disabled_maps.clone();
-        // Primer mapa: el elegido (`start_map`) o uno al azar; salta a uno activo donde quepan todos.
-        let first = if self.config.random_map_order {
+        list.disabled = config.disabled_maps.clone();
+        // Primer mapa: el pedido por nombre, el elegido (`start_map`) o uno al azar; salta a uno
+        // activo donde quepan todos.
+        let named = map.and_then(|n| {
+            list.paths
+                .iter()
+                .position(|p| p.file_stem().is_some_and(|s| s == n))
+        });
+        let first = if let Some(i) = named {
+            list.index = i;
+            list.current()
+        } else if config.random_map_order {
             list.random_for(players.len(), &mut Rng::new(seed))
         } else {
-            list.index = (self.config.start_map.max(0) as usize).min(list.paths.len() - 1);
+            list.index = (config.start_map.max(0) as usize).min(list.paths.len() - 1);
             match list.current() {
                 Ok(m)
                     if m.max_players as usize >= players.len()
@@ -175,10 +195,10 @@ impl App {
             }
         };
         let Ok(map): Result<Map, _> = first else {
-            return;
+            return false;
         };
 
-        let mut world = World::with_config(map, seed, self.config.clone());
+        let mut world = World::with_config(map, seed, config);
         world.playlist = Some(list);
         world.start_match(players.len());
         let teams: Vec<u8> = players.iter().map(|p| p.team).collect();
@@ -214,6 +234,7 @@ impl App {
         self.audio.set_music(self.play_music);
         self.acc = 0.0;
         self.last = Instant::now();
+        true
     }
 
     fn open_map_select(&mut self) {
@@ -436,6 +457,7 @@ impl ApplicationHandler for App {
                 }
             }
             WindowEvent::RedrawRequested => {
+                self.shots_step(el);
                 self.joysticks.update();
                 let now = Instant::now();
                 let frame = (now - self.last).as_secs_f64().min(0.25);
@@ -445,7 +467,7 @@ impl ApplicationHandler for App {
                         // Paso fijo: la simulación avanza en ticks de 1/TICK_HZ, independiente del framerate.
                         self.acc += frame;
                         let dt = 1.0 / TICK_HZ as f64;
-                        if self.paused {
+                        if self.paused || self.scripted {
                             self.acc = 0.0;
                         }
                         while self.acc >= dt {
@@ -531,14 +553,31 @@ impl ApplicationHandler for App {
 }
 
 fn main() {
-    let config_path = Config::default_path();
-    let config = config_path.as_deref().map(Config::load).unwrap_or_default();
+    // `--screenshots DIR`: recorre las pantallas del juego, guarda un PNG de cada una (y un GIF
+    // de una partida) en DIR y sale. No lee ni escribe la configuración del usuario.
+    let mut args = std::env::args().skip(1);
+    let shots_dir = match args.next().as_deref() {
+        Some("--screenshots") => args.next().map(PathBuf::from),
+        _ => None,
+    };
+
+    let (config_path, config) = if shots_dir.is_some() {
+        (None, Config::default())
+    } else {
+        let path = Config::default_path();
+        let config = path.as_deref().map(Config::load).unwrap_or_default();
+        (path, config)
+    };
     let menu = Menu::new(&config);
 
     let el = EventLoop::new().unwrap();
     el.set_control_flow(ControlFlow::Poll);
     el.run_app(&mut App {
-        screen: Screen::Intro(Intro::new(clock_seed())),
+        screen: if shots_dir.is_some() {
+            Screen::Menu
+        } else {
+            Screen::Intro(Intro::new(clock_seed()))
+        },
         config,
         config_path,
         menu,
@@ -557,6 +596,8 @@ fn main() {
         audio: Audio::new(),
         play_music: false,
         paused: false,
+        shots: shots_dir.map(shots::Shots::new),
+        scripted: false,
     })
     .unwrap();
 }

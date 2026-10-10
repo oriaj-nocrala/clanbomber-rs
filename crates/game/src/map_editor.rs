@@ -129,6 +129,14 @@ impl MapEditor {
         self.top = top_for(to, self.list.paths.len());
     }
 
+    /// Abre en el editor el mapa de ese nombre (para las capturas de pantalla).
+    pub fn edit_named(&mut self, name: &str) {
+        if let Some(i) = self.names().iter().position(|n| n == name) {
+            self.select(i);
+            self.start_editing(i);
+        }
+    }
+
     fn start_editing(&mut self, index: usize) {
         let path = self.list.paths[index].clone();
         if let Ok(doc) = MapDoc::load(&path) {

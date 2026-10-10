@@ -43,6 +43,12 @@ impl Ui {
         }
     }
 
+    /// Deja la animación del marcador terminada (para las capturas de pantalla).
+    pub fn settle(&mut self) {
+        self.was_scores = true;
+        self.scroll_in = 100.0;
+    }
+
     /// Avanza la animación del marcador `dt` segundos.
     pub fn update(&mut self, world: &World, dt: f32) {
         let scores = matches!(world.phase, Phase::Scores { .. });
