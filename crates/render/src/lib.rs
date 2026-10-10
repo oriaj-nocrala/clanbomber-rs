@@ -64,7 +64,14 @@ struct Vertex {
     pos: [f32; 2],
     uv: [f32; 2],
     color: [f32; 4],
+    /// Modo de dibujo de `quad.wgsl` (NORMAL, SILHOUETTE, ICE, HUE).
+    mode: u32,
 }
+
+const MODE_NORMAL: u32 = 0;
+const MODE_SILHOUETTE: u32 = 1;
+const MODE_ICE: u32 = 2;
+const MODE_HUE: u32 = 3;
 
 pub struct Renderer {
     surface: wgpu::Surface<'static>,
@@ -91,6 +98,9 @@ pub struct Renderer {
     particle_layer: Option<usize>,
     shake: f32,
     started: std::time::Instant,
+    /// Tamaño virtual y reloj para los shaders (`Globals`).
+    globals: wgpu::Buffer,
+    waves: Vec<[f32; 4]>,
 }
 
 impl Renderer {
@@ -126,13 +136,13 @@ impl Renderer {
         let globals = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("globals"),
             contents: bytemuck::cast_slice(&[VIRTUAL_W, VIRTUAL_H, 0.0, 0.0]),
-            usage: wgpu::BufferUsages::UNIFORM,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
         let bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: None,
             entries: &[wgpu::BindGroupLayoutEntry {
                 binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX,
+                visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
                 ty: wgpu::BindingType::Buffer {
                     ty: wgpu::BufferBindingType::Uniform,
                     has_dynamic_offset: false,
@@ -191,7 +201,7 @@ impl Renderer {
                 buffers: &[Some(wgpu::VertexBufferLayout {
                     array_stride: std::mem::size_of::<Vertex>() as u64,
                     step_mode: wgpu::VertexStepMode::Vertex,
-                    attributes: &wgpu::vertex_attr_array![0 => Float32x2, 1 => Float32x2, 2 => Float32x4],
+                    attributes: &wgpu::vertex_attr_array![0 => Float32x2, 1 => Float32x2, 2 => Float32x4, 3 => Uint32],
                 })],
             },
             fragment: Some(wgpu::FragmentState {
@@ -257,6 +267,8 @@ impl Renderer {
             particle_layer: None,
             shake: 0.0,
             started: std::time::Instant::now(),
+            globals,
+            waves: Vec::new(),
         };
         // Textura 0: un píxel blanco, para los quads de color plano.
         r.load_rgba(&[255; 4], 1, 1);
@@ -366,17 +378,53 @@ impl Renderer {
 
     /// Rectángulo relleno en coordenadas virtuales (800x600).
     pub fn quad(&mut self, x: f32, y: f32, w: f32, h: f32, color: [f32; 4]) {
-        self.push_quad(TextureId(0), [x, y, w, h], [0.0; 4], color);
+        self.push_quad(TextureId(0), [x, y, w, h], [0.0; 4], color, MODE_NORMAL);
     }
 
     /// Región `src` (x, y, w, h en píxeles de la textura) dibujada en `dst`.
     pub fn sprite(&mut self, tex: TextureId, src: [f32; 4], dst: [f32; 4]) {
-        self.push_quad(tex, dst, src, [1.0; 4]);
+        self.push_quad(tex, dst, src, [1.0; 4], MODE_NORMAL);
     }
 
     /// Como [`sprite`](Self::sprite) pero multiplicando el color (para el alfa al desvanecerse).
     pub fn sprite_tinted(&mut self, tex: TextureId, src: [f32; 4], dst: [f32; 4], tint: [f32; 4]) {
-        self.push_quad(tex, dst, src, tint);
+        self.push_quad(tex, dst, src, tint, MODE_NORMAL);
+    }
+
+    /// La forma del sprite rellena de `color` (el alfa de `color` multiplica el del sprite).
+    pub fn sprite_silhouette(
+        &mut self,
+        tex: TextureId,
+        src: [f32; 4],
+        dst: [f32; 4],
+        color: [f32; 4],
+    ) {
+        self.push_quad(tex, dst, src, color, MODE_SILHOUETTE);
+    }
+
+    /// Sprite con el tono girando en el tiempo; `amount` en [0, 1] mezcla con el original.
+    pub fn sprite_hue(&mut self, tex: TextureId, src: [f32; 4], dst: [f32; 4], amount: f32) {
+        self.push_quad(tex, dst, src, [1.0, 1.0, 1.0, amount], MODE_HUE);
+    }
+
+    /// Destello de hielo animado sobre el rectángulo `dst` (se dibuja encima de la casilla).
+    pub fn ice_shine(&mut self, dst: [f32; 4], alpha: f32) {
+        self.push_quad(
+            TextureId(0),
+            dst,
+            [0.0; 4],
+            [1.0, 1.0, 1.0, alpha],
+            MODE_ICE,
+        );
+    }
+
+    /// Onda expansiva que deforma la imagen en la composición final. `progress` va de 0 a 1 y
+    /// `strength` escala radio y amplitud. Solo cuenta para el fotograma actual.
+    pub fn shockwave(&mut self, center: [f32; 2], progress: f32, strength: f32) {
+        if self.effects.shockwaves && self.waves.len() < fx::MAX_WAVES {
+            self.waves
+                .push([center[0], center[1], progress.clamp(0.0, 1.0), strength]);
+        }
     }
 
     /// Celda `index` de una hoja de sprites, en (x, y) a tamaño nativo.
@@ -397,7 +445,14 @@ impl Renderer {
         }
     }
 
-    fn push_quad(&mut self, tex: TextureId, dst: [f32; 4], src: [f32; 4], color: [f32; 4]) {
+    fn push_quad(
+        &mut self,
+        tex: TextureId,
+        dst: [f32; 4],
+        src: [f32; 4],
+        color: [f32; 4],
+        mode: u32,
+    ) {
         let quad_index = (self.verts.len() / 4) as u32;
         if quad_index as usize >= MAX_QUADS {
             return;
@@ -419,6 +474,7 @@ impl Renderer {
             pos: [px, py],
             uv: [u, vv],
             color,
+            mode,
         };
         self.verts.extend([
             v(x, y, u0, v0),
@@ -467,6 +523,12 @@ impl Renderer {
         self.queue
             .write_buffer(&self.vbuf, 0, bytemuck::cast_slice(&self.verts));
         self.fire.upload(&self.queue, &self.fires);
+        let time = self.started.elapsed().as_secs_f32();
+        self.queue.write_buffer(
+            &self.globals,
+            0,
+            bytemuck::cast_slice(&[VIRTUAL_W, VIRTUAL_H, time, 0.0]),
+        );
 
         let mut enc = self.device.create_command_encoder(&Default::default());
         if let Some(p) = self.particles.as_mut() {
@@ -480,12 +542,8 @@ impl Renderer {
         if self.effects.bloom {
             self.post.bloom(&mut enc);
         }
-        self.post.set_params(
-            &self.queue,
-            self.effects,
-            self.shake,
-            self.started.elapsed().as_secs_f32(),
-        );
+        self.post
+            .set_params(&self.queue, self.effects, self.shake, time, &self.waves);
         let (viewport, _) = letterbox(self.config.width, self.config.height);
         self.post.composite(&mut enc, &view, viewport);
         self.queue.submit([enc.finish()]);
@@ -502,6 +560,7 @@ impl Renderer {
         self.verts.clear();
         self.batches.clear();
         self.fires.clear();
+        self.waves.clear();
         self.particle_layer = None;
     }
 

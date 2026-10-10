@@ -91,6 +91,14 @@ impl App {
                 let dt = ticks as f32 / cb_core::TICK_HZ as f32;
                 self.sparks.update(r, w, dt);
                 r.advance_particles(dt);
+                if let Some(a) = &self.assets {
+                    let skins: Vec<f32> = self
+                        .players
+                        .iter()
+                        .map(|p| a.skins[p.skin].offset_y)
+                        .collect();
+                    self.ui.update_trails(w, dt, &skins);
+                }
             }
         }
     }

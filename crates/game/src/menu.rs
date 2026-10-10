@@ -53,6 +53,8 @@ pub enum Id {
     Particles,
     Crt,
     FireShader,
+    Shockwaves,
+    SpriteFx,
     MapEditor,
     Credits,
     Help,
@@ -320,6 +322,18 @@ impl Menu {
             Id::FireShader,
             "Shader Explosions",
             value(Id::FireShader, 0, 1),
+        );
+        m.add(
+            gr,
+            Id::Shockwaves,
+            "Shockwaves",
+            value(Id::Shockwaves, 0, 1),
+        );
+        m.add(
+            gr,
+            Id::SpriteFx,
+            "Sprite Effects",
+            value(Id::SpriteFx, 0, 1),
         );
 
         m.add(

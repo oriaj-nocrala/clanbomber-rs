@@ -509,6 +509,14 @@ impl ApplicationHandler for App {
                         }
                         if let Some(w) = &self.world {
                             self.ui.update(w, frame as f32);
+                            if let Some(a) = &self.assets {
+                                let skins: Vec<f32> = self
+                                    .players
+                                    .iter()
+                                    .map(|p| a.skins[p.skin].offset_y)
+                                    .collect();
+                                self.ui.update_trails(w, played, &skins);
+                            }
                             if let Some((_, r)) = self.gfx.as_mut() {
                                 self.sparks.update(r, w, played);
                                 r.advance_particles(played);
