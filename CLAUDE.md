@@ -18,8 +18,11 @@ cargo fmt
   (`movement.rs`, port de `GameObject::move_*`), vuelo en arco (`flight.rs`), bombers, enfermedades,
   bombas/explosiones, extras y `World::step` (`sim.rs`).
 - `crates/render` (`cb-render`): wgpu. Batcher de quads en resolución virtual 800x600 con letterbox,
-  texturas (`load_texture`), hojas de sprites (`Sheet`), shader en `quad.wgsl`.
+  texturas (`load_texture`), hojas de sprites (`Sheet`), texto TrueType con atlas de glifos (`load_font`,
+  `text`, vía `fontdue`), shader en `quad.wgsl`.
 - `crates/game` (`cb-game`): binario winit. Loop con acumulador de tiempo → `World::step` a 60 Hz → dibujo.
+  `assets.rs` carga texturas y fuentes; `draw.rs` dibuja mapa, HUD y marcador. Espacio pasa del marcador a la
+  siguiente ronda.
 - `assets/maps`, `assets/pics`: copiados del fork de referencia (ver abajo).
 
 ## Referencia: el original
@@ -62,6 +65,7 @@ enum (`CurrentSurfaceTexture`), `VertexState.buffers` es `&[Option<_>]`, `bind_g
 
 ## Hoja de ruta
 
-1. ~~Mapa con texturas~~ 2. ~~Bomber (movimiento + colisión + teclado + sprites)~~ 3. ~~Bombas y explosiones~~
-4. Extras (hecho: caída de cajas, recogida, destrucción, patada, guante/lanzar, caída por agujeros,
-   enfermedades, vuelo de extras, hielo/flechas/trampas) → pendiente: cadáveres, fin de ronda 5. Menús, IA, sonido 6. Partículas (compute), sprites IA.
+1. ~~Mapa con texturas~~ 2. ~~Bomber~~ 3. ~~Bombas y explosiones~~
+4. ~~Extras, enfermedades, hielo/flechas/trampas, ciclo de partida (rondas, reloj, marcador)~~
+   → pendiente: cadáveres y partes que salen volando al morir.
+5. Menús (selección de mapa y jugadores), IA, sonido. 6. Partículas (compute), sprites con IA.
