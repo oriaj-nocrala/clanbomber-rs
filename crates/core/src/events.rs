@@ -19,4 +19,7 @@ pub enum GameEvent {
     Crunch,
     /// Fin de la partida (marcador del campeón).
     Klatsch,
+    /// Un cadáver salpica a quien pasa cerca (0 o 1: cuál de los dos sonidos).
+    Splash(u8),
+    CorpseExplode,
 }

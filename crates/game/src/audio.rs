@@ -31,10 +31,13 @@ pub enum Sfx {
     HurryUp,
     Crunch,
     Klatsch,
+    Splash1,
+    Splash2,
+    CorpseExplode,
 }
 
 impl Sfx {
-    const ALL: [Sfx; 18] = [
+    const ALL: [Sfx; 21] = [
         Sfx::Clear,
         Sfx::Break,
         Sfx::CreditsStop,
@@ -53,6 +56,9 @@ impl Sfx {
         Sfx::HurryUp,
         Sfx::Crunch,
         Sfx::Klatsch,
+        Sfx::Splash1,
+        Sfx::Splash2,
+        Sfx::CorpseExplode,
     ];
 
     pub fn file(self) -> &'static str {
@@ -75,6 +81,9 @@ impl Sfx {
             Sfx::HurryUp => "hurry_up.wav",
             Sfx::Crunch => "crunch.wav",
             Sfx::Klatsch => "klatsch.wav",
+            Sfx::Splash1 => "splash1a.wav",
+            Sfx::Splash2 => "splash2a.wav",
+            Sfx::CorpseExplode => "corpse_explode.wav",
         }
     }
 }
@@ -94,6 +103,9 @@ impl From<GameEvent> for Sfx {
             GameEvent::HurryUp => Sfx::HurryUp,
             GameEvent::Crunch => Sfx::Crunch,
             GameEvent::Klatsch => Sfx::Klatsch,
+            GameEvent::Splash(0) => Sfx::Splash1,
+            GameEvent::Splash(_) => Sfx::Splash2,
+            GameEvent::CorpseExplode => Sfx::CorpseExplode,
         }
     }
 }

@@ -2,6 +2,7 @@ use crate::ai::{Ai, AiView};
 use crate::bomb::{Bomb, Explosion, Object};
 use crate::bomber::{Action, Bomber, Input};
 use crate::config::Config;
+use crate::corpse::{Corpse, CorpsePart};
 use crate::events::GameEvent;
 use crate::extra::{roll_extra, Extra, ExtraKind};
 use crate::map::{Dir, Map, MapList, Tile, MAP_HEIGHT, MAP_WIDTH};
@@ -242,6 +243,8 @@ impl World {
                 Object::Bomb(_) => self.act_bomb(i),
                 Object::Explosion(_) => self.act_explosion(i),
                 Object::Extra(_) => self.act_extra(i),
+                Object::Corpse(_) => self.act_corpse(i),
+                Object::CorpsePart(_) => self.act_part(i),
             }
         }
 
@@ -520,6 +523,13 @@ impl World {
         for k in 0..self.bombers.len() {
             let events = std::mem::take(&mut self.bombers[k].events);
             self.events.extend(events);
+            // El cadáver aparece donde murió; en modo infantil no hay.
+            for (x, y, sprite) in std::mem::take(&mut self.bombers[k].corpses) {
+                if !self.config.kids_mode {
+                    self.objects
+                        .push(Object::Corpse(Corpse::new(x, y, k, sprite)));
+                }
+            }
             for (kind, x, y) in std::mem::take(&mut self.bombers[k].drops) {
                 let mut e = Extra::new(x, y, kind);
                 if let Some(t) = self.get_passable() {
@@ -593,6 +603,12 @@ impl World {
                     b.fall()
                 }
                 Object::Extra(e) if self.map.is_hole(e.tile().0, e.tile().1) => e.fall(),
+                Object::Corpse(c) if self.map.is_hole(c.tile().0, c.tile().1) => {
+                    if !c.falling {
+                        self.events.push(GameEvent::DeepFall);
+                    }
+                    c.fall()
+                }
                 _ => {}
             }
         }
@@ -622,6 +638,94 @@ impl World {
         if let Some(kind) = roll_extra(&mut self.rng, &cfg) {
             self.objects.push(Object::Extra(Extra::new(x, y, kind)));
         }
+    }
+
+    /// `Bomber_Corpse::explode`: si ya ha reposado, revienta en trozos que salen despedidos a
+    /// puntos al azar del mapa.
+    fn explode_corpse(&mut self, i: usize) {
+        let Object::Corpse(c) = &mut self.objects[i] else {
+            return;
+        };
+        if c.explode_delay >= 0.0 {
+            return;
+        }
+        c.delete_me = true;
+        let (x, y) = (c.x as i32, c.y as i32);
+        self.events.push(GameEvent::CorpseExplode);
+        for _ in 0..self.config.corpse_parts.max(0) {
+            let mut part = CorpsePart::new(x, y, &mut self.rng);
+            let tx = self.rng.below(MAP_WIDTH as u32) as i32;
+            let ty = self.rng.below(MAP_HEIGHT as u32) as i32;
+            let dx = self.rng.below(20) as i32 - 10;
+            let dy = self.rng.below(20) as i32 - 10;
+            part.fly_to((tx * 40 + dx, ty * 40 + dy));
+            self.objects.push(Object::CorpsePart(part));
+        }
+    }
+
+    /// `Bomber_Corpse::act`: se arrastra al azar, salpica a quien se acerca y madura para reventar.
+    fn act_corpse(&mut self, i: usize) {
+        let Object::Corpse(orig) = &self.objects[i] else {
+            return;
+        };
+        let mut c = orig.clone();
+        if c.falling {
+            c.continue_falling(TICK_DT);
+            if c.fallen_down {
+                c.delete_me = true;
+                self.objects[i] = Object::Corpse(c);
+                return;
+            }
+        }
+
+        if c.splash_counter != -1 {
+            // `Direction(fast_random() % 4)`: abajo, izquierda, arriba o derecha.
+            let dir = [Dir::Down, Dir::Left, Dir::Up, Dir::Right][self.rng.below(4) as usize];
+            {
+                let view = View {
+                    objects: &self.objects,
+                    bombers: &self.bombers,
+                };
+                let env = Self::env(&self.map, &view);
+                let mover = Mover {
+                    can_pass_bomber: false,
+                    can_kick: false,
+                    self_bomb: None,
+                };
+                let mut pos = Pos {
+                    x: &mut c.x,
+                    y: &mut c.y,
+                    remainder: &mut c.remainder,
+                };
+                advance(&mut pos, c.speed, TICK_DT, dir, &mover, &env);
+            }
+            let near = self.bombers.iter().any(|b| {
+                !b.dead && (b.get_x() - c.get_x()).abs() < 30 && (b.get_y() - c.get_y()).abs() < 30
+            });
+            if near {
+                if c.ready_to_splash {
+                    self.events.push(GameEvent::Splash(self.rng.below(2) as u8));
+                    c.splash_counter += 1;
+                    if c.splash_counter == 5 {
+                        c.splash_counter = -1;
+                    }
+                }
+                c.ready_to_splash = false;
+                self.objects[i] = Object::Corpse(c);
+                return;
+            }
+        }
+        c.ready_to_splash = true;
+        c.explode_delay -= TICK_DT;
+        self.objects[i] = Object::Corpse(c);
+    }
+
+    /// `Corpse_Part::act`.
+    fn act_part(&mut self, i: usize) {
+        let Object::CorpsePart(p) = &mut self.objects[i] else {
+            return;
+        };
+        p.act(TICK_DT, Some(&self.map));
     }
 
     /// `Extra::act`: vuelo, caída, parpadeo de destrucción y efecto sobre quien lo pisa.
@@ -789,6 +893,19 @@ impl World {
         for i in self.extras_where(|t| e.destroyed_tiles.contains(&t)) {
             self.destroy_extra(i);
         }
+        // splatter_corpses: los cadáveres en la cruz de fuego revientan (si ya han reposado).
+        let hit: Vec<usize> = self
+            .objects
+            .iter()
+            .enumerate()
+            .filter_map(|(i, o)| match o {
+                Object::Corpse(c) if e.covers(c.tile().0, c.tile().1) => Some(i),
+                _ => None,
+            })
+            .collect();
+        for i in hit {
+            self.explode_corpse(i);
+        }
         self.objects.push(Object::Explosion(e));
     }
 
@@ -857,6 +974,7 @@ impl World {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::corpse::Corpse;
     use crate::disease::DiseaseKind;
     use crate::map::Dir;
     use crate::map::Map;
@@ -1940,5 +2058,148 @@ mod tests {
         w.bombers[1].die();
         w.step(&[]);
         assert!(w.take_events().contains(&GameEvent::Klatsch));
+    }
+
+    // ---- Cadáveres ----
+
+    fn corpses(w: &World) -> Vec<&Corpse> {
+        w.objects
+            .iter()
+            .filter_map(|o| match o {
+                Object::Corpse(c) => Some(c),
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn parts(w: &World) -> usize {
+        w.objects
+            .iter()
+            .filter(|o| matches!(o, Object::CorpsePart(_)))
+            .count()
+    }
+
+    #[test]
+    fn a_dead_bomber_leaves_a_corpse_in_the_fallen_pose_where_it_died() {
+        let mut w = ai_world(&[]);
+        w.ais = vec![None, None];
+        w.bombers[0] = Bomber::new(5 * 40, 5 * 40);
+        w.bombers[0].die();
+        w.step(&[]);
+        let c = corpses(&w);
+        assert_eq!(c.len(), 1);
+        assert_eq!((c[0].get_x(), c[0].get_y(), c[0].owner), (200, 200, 0));
+        assert_eq!(c[0].sprite_nr, w.bombers[0].dir.index() * 10 + 9);
+    }
+
+    #[test]
+    fn kids_mode_and_falling_deaths_leave_no_corpse() {
+        let mut cfg = Config::default();
+        cfg.kids_mode = true;
+        let mut w = World::with_config(arena(), 1, cfg);
+        w.bombers = vec![Bomber::new(5 * 40, 5 * 40), Bomber::new(10 * 40, 5 * 40)];
+        w.bombers[0].die();
+        w.step(&[]);
+        assert!(corpses(&w).is_empty(), "modo infantil");
+
+        let mut w = world_with(&[(7, 5, '-')]);
+        w.bombers[0] = Bomber::new(6 * 40, 5 * 40);
+        for _ in 0..200 {
+            w.step(&[RIGHT]);
+        }
+        assert!(w.bombers[0].dead);
+        assert!(corpses(&w).is_empty(), "caer por un hueco no deja cadáver");
+    }
+
+    #[test]
+    fn a_corpse_splashes_five_times_when_someone_stands_next_to_it() {
+        let mut w = world_with(&[]);
+        w.bombers[1] = Bomber::new(10 * 40, 5 * 40);
+        w.objects
+            .push(Object::Corpse(Corpse::new(10 * 40, 5 * 40, 0, 9)));
+        let mut splashes = 0;
+        for _ in 0..(3.0 * 60.0) as usize {
+            w.step(&[]);
+            splashes += w
+                .take_events()
+                .iter()
+                .filter(|e| matches!(e, GameEvent::Splash(_)))
+                .count();
+        }
+        // Con alguien pegado salpica; entre salpicadura y salpicadura hace falta apartarse un tick,
+        // así que sin moverse solo suena una vez.
+        assert_eq!(splashes, 1, "una por cada vez que alguien llega");
+    }
+
+    #[test]
+    fn a_fresh_corpse_does_not_burst_but_a_rested_one_does() {
+        let mut w = world_with(&[]);
+        w.bombers = vec![Bomber::new(1 * 40, 1 * 40), Bomber::new(15 * 40, 11 * 40)];
+        w.objects
+            .push(Object::Corpse(Corpse::new(8 * 40, 6 * 40, 0, 9)));
+        w.objects.push(Object::Explosion(Explosion::new(
+            &mut w.map,
+            &|_, _| false,
+            8 * 40,
+            6 * 40,
+            1,
+            0,
+        )));
+        w.step(&[]);
+        assert_eq!(corpses(&w).len(), 1, "demasiado reciente");
+        assert_eq!(parts(&w), 0);
+
+        for _ in 0..(1.0 * 60.0) as usize {
+            w.step(&[]);
+        }
+        // Una bomba que cae justo donde quedó el cadáver.
+        let (tx, ty) = corpses(&w)[0].tile();
+        let mut b = Bomb::new(tx, ty, 1, 1);
+        b.countdown = 0.01;
+        w.objects.push(Object::Bomb(b));
+        for _ in 0..4 {
+            w.step(&[]);
+        }
+        assert!(corpses(&w).is_empty(), "reventó");
+        assert_eq!(parts(&w), w.config.corpse_parts as usize);
+        assert!(w.take_events().contains(&GameEvent::CorpseExplode));
+        // Los trozos aterrizan, se quedan un rato y desaparecen.
+        for _ in 0..(4.0 * 60.0) as usize {
+            w.step(&[]);
+        }
+        assert_eq!(parts(&w), 0);
+    }
+
+    #[test]
+    fn the_corpse_parts_setting_controls_the_gore() {
+        let mut cfg = Config::default();
+        cfg.corpse_parts = 25;
+        let mut w = World::with_config(arena(), 3, cfg);
+        w.bombers = vec![Bomber::new(5 * 40, 5 * 40), Bomber::new(15 * 40, 11 * 40)];
+        let mut c = Corpse::new(8 * 40, 6 * 40, 0, 9);
+        c.explode_delay = -1.0;
+        w.objects.push(Object::Corpse(c));
+        let mut b = Bomb::new(8, 6, 1, 1);
+        b.countdown = 0.01;
+        w.objects.push(Object::Bomb(b));
+        for _ in 0..4 {
+            w.step(&[]);
+        }
+        assert_eq!(parts(&w), 25);
+    }
+
+    #[test]
+    fn corpses_drift_slowly_and_never_leave_the_map() {
+        let mut w = world_with(&[]);
+        w.bombers = vec![Bomber::new(1 * 40, 1 * 40), Bomber::new(15 * 40, 11 * 40)];
+        w.objects
+            .push(Object::Corpse(Corpse::new(8 * 40, 6 * 40, 0, 9)));
+        for _ in 0..(20.0 * 60.0) as usize {
+            w.step(&[]);
+            let c = corpses(&w)[0];
+            assert!((0..680).contains(&c.get_x()) && (0..520).contains(&c.get_y()));
+        }
+        let c = corpses(&w)[0];
+        assert!((c.get_x() - 320).abs() + (c.get_y() - 240).abs() < 600);
     }
 }

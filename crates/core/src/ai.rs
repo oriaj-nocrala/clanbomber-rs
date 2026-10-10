@@ -400,6 +400,7 @@ impl Ai {
                         }
                     }
                 }
+                Object::Corpse(_) | Object::CorpsePart(_) => {}
                 Object::Extra(e) => {
                     let (x, y) = (
                         ((e.x as i32 + 20) / 40).clamp(0, 16),

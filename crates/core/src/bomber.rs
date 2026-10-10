@@ -71,6 +71,8 @@ pub struct Bomber {
     pub drops: Vec<(ExtraKind, i32, i32)>,
     /// Sucesos de este bomber (muerte, caída) que el `World` recoge.
     pub events: Vec<GameEvent>,
+    /// Cadáveres que ha dejado (x, y, sprite) y el `World` debe crear (salvo modo infantil).
+    pub corpses: Vec<(i32, i32, u32)>,
 }
 
 const T: i32 = TILE_PIXELS as i32;
@@ -112,6 +114,7 @@ impl Bomber {
             extra_gloves: 0,
             drops: Vec::new(),
             events: Vec::new(),
+            corpses: Vec::new(),
         }
     }
 
@@ -138,6 +141,7 @@ impl Bomber {
         self.extra_gloves = 0;
         self.drops.clear();
         self.events.clear();
+        self.corpses.clear();
         // Config::start_* del original.
         self.skateboards = cfg.start_skateboards;
         self.speed = 90 + cfg.start_skateboards * 40;
@@ -309,6 +313,9 @@ impl Bomber {
         self.deaths += 1;
         if !self.fallen_down {
             self.loose_all_extras();
+            // `Bomber_Corpse` en la pose de caído, en el sitio donde murió.
+            self.corpses
+                .push((self.get_x(), self.get_y(), self.dir.index() * 10 + 9));
         }
         self.x = 0.0;
         self.y = 0.0;

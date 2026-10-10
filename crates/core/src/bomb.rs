@@ -1,6 +1,7 @@
 //! Bombas y explosiones (ClanBomber2: Bomb.cpp, Explosion.cpp).
 
 use crate::config::Config;
+use crate::corpse::{Corpse, CorpsePart};
 use crate::extra::Extra;
 use crate::flight::Flight;
 use crate::map::{Dir, Map, TILE_PIXELS};
@@ -285,6 +286,8 @@ pub enum Object {
     Bomb(Bomb),
     Explosion(Explosion),
     Extra(Extra),
+    Corpse(Corpse),
+    CorpsePart(CorpsePart),
 }
 
 impl Object {
@@ -293,6 +296,8 @@ impl Object {
             Object::Bomb(b) => b.delete_me,
             Object::Explosion(e) => e.delete_me,
             Object::Extra(x) => x.delete_me,
+            Object::Corpse(c) => c.delete_me,
+            Object::CorpsePart(p) => p.delete_me,
         }
     }
 }

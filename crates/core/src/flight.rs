@@ -35,8 +35,36 @@ impl Flight {
     }
 
     /// `continue_flying`. Con `walls = Some(mapa)` (`can_fly_over_walls == false`) los muros y
-    /// el borde frenan el vuelo; las cajas no.
+    /// el borde frenan el vuelo (se comprueban las cuatro esquinas de la casilla del objeto);
+    /// las cajas no.
     pub fn advance(&mut self, pos: &mut (f32, f32), dt: f32, walls: Option<&Map>) {
+        self.advance_checked(pos, dt, |p| {
+            walls.is_some_and(|map| {
+                let (x, y) = (p.0 as i32, p.1 as i32);
+                map.is_wall_px(x, y)
+                    || map.is_wall_px(x + 39, y)
+                    || map.is_wall_px(x, y + 39)
+                    || map.is_wall_px(x + 39, y + 39)
+            })
+        });
+    }
+
+    /// Variante de las partes de cadáver (`continue_flying` con `CORPSE_PART`): solo cuenta la
+    /// casilla bajo el centro (`get_maptile()`).
+    pub fn advance_center(&mut self, pos: &mut (f32, f32), dt: f32, map: &Map) {
+        self.advance_checked(pos, dt, |p| {
+            map.is_wall_px(p.0 as i32 + 20, p.1 as i32 + 20)
+        });
+    }
+
+    /// Un paso del vuelo; si `blocked` dice que la nueva posición choca, se deshace el paso y el
+    /// destino pasa a ser donde se está.
+    fn advance_checked(
+        &mut self,
+        pos: &mut (f32, f32),
+        dt: f32,
+        blocked: impl Fn((f32, f32)) -> bool,
+    ) {
         if dt == 0.0 {
             return;
         }
@@ -56,17 +84,10 @@ impl Flight {
             );
             pos.0 += dx;
             pos.1 += dy;
-            if let Some(map) = walls {
-                let (x, y) = (pos.0 as i32, pos.1 as i32);
-                if map.is_wall_px(x, y)
-                    || map.is_wall_px(x + 39, y)
-                    || map.is_wall_px(x, y + 39)
-                    || map.is_wall_px(x + 39, y + 39)
-                {
-                    pos.0 -= dx;
-                    pos.1 -= dy;
-                    self.dest = *pos;
-                }
+            if blocked(*pos) {
+                pos.0 -= dx;
+                pos.1 -= dy;
+                self.dest = *pos;
             }
             self.progress += time_step * self.speed;
             if self.progress >= 1.0 {
