@@ -59,7 +59,8 @@ impl MapDoc {
         let max_players = rest[..digits]
             .parse()
             .map_err(|_| MapError::Format("máx. jugadores inválido"))?;
-        let mut chars = rest[digits..].chars().filter(|&c| c != '\n');
+        // También se ignora `\r`: en Windows git puede dejar los archivos con fin de línea CRLF.
+        let mut chars = rest[digits..].chars().filter(|&c| c != '\n' && c != '\r');
 
         let mut data = [[' '; MAP_HEIGHT]; MAP_WIDTH];
         for y in 0..MAP_HEIGHT {
@@ -169,6 +170,13 @@ mod tests {
             }
         }
         assert_eq!(n, 33);
+    }
+
+    #[test]
+    fn windows_line_endings_parse_like_unix_ones() {
+        let unix = MapDoc::template().to_text();
+        let crlf = unix.replace('\n', "\r\n");
+        assert_eq!(MapDoc::parse(&crlf).unwrap(), MapDoc::parse(&unix).unwrap());
     }
 
     #[test]

@@ -1,0 +1,2 @@
+# Los mapas se leen carácter a carácter: siempre con fin de línea LF, también en Windows.
+*.map text eol=lf
