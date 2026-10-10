@@ -172,6 +172,14 @@ impl Map {
         self.tiles[tx as usize][ty as usize] == Tile::Wall
     }
 
+    /// `MapTile::passable`: suelo normal donde puede caer un extra (`Map::get_passable`).
+    pub fn is_passable(&self, tx: i32, ty: i32) -> bool {
+        matches!(
+            self.get(tx, ty),
+            Tile::Ground | Tile::Ice | Tile::Arrow(_) | Tile::Trap
+        )
+    }
+
     /// `MapTile_None`: dentro del mapa, sin suelo (los objetos caen).
     pub fn is_hole(&self, tx: i32, ty: i32) -> bool {
         tx >= 0

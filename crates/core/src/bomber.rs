@@ -4,6 +4,8 @@
 //! Las posiciones son píxeles dentro del mapa (0..680 x 0..520), como `x`/`y` del
 //! original: `f32` internamente, enteros truncados (`get_x`) en las comprobaciones.
 
+use crate::disease::{Disease, DiseaseKind};
+use crate::extra::ExtraKind;
 use crate::map::{Dir, TILE_PIXELS};
 use crate::movement::{advance, Env, Mover, Pos};
 
@@ -43,6 +45,19 @@ pub struct Bomber {
     pub falling: bool,
     pub fall_countdown: f32,
     pub fallen_down: bool,
+    pub disease: Option<Disease>,
+    /// Estado del controlador, que las enfermedades alteran (`Controller`).
+    reverse: bool,
+    bomb_always: bool,
+    active: bool,
+    /// Extras ganados por tipo, para soltarlos al morir (`extra_bombs`, ...).
+    extra_bombs: i32,
+    extra_power: i32,
+    extra_skateboards: i32,
+    extra_kick: i32,
+    extra_gloves: i32,
+    /// Extras que este bomber ha soltado y el `World` debe colocar: (tipo, x, y en píxeles).
+    pub drops: Vec<(ExtraKind, i32, i32)>,
 }
 
 const T: i32 = TILE_PIXELS as i32;
@@ -74,6 +89,16 @@ impl Bomber {
             falling: false,
             fall_countdown: 0.0,
             fallen_down: false,
+            disease: None,
+            reverse: false,
+            bomb_always: false,
+            active: true,
+            extra_bombs: 0,
+            extra_power: 0,
+            extra_skateboards: 0,
+            extra_kick: 0,
+            extra_gloves: 0,
+            drops: Vec::new(),
         }
     }
 
@@ -82,10 +107,96 @@ impl Bomber {
         ((self.get_x() + 20) / T, (self.get_y() + 20) / T)
     }
 
+    /// `Bomber::loose_all_extras`: suelta cada extra ganado (el `World` los coloca y lanza).
+    fn loose_all_extras(&mut self) {
+        let (x, y) = (self.get_x(), self.get_y());
+        for (kind, n) in [
+            (ExtraKind::Bomb, &mut self.extra_bombs),
+            (ExtraKind::Power, &mut self.extra_power),
+            (ExtraKind::Skateboard, &mut self.extra_skateboards),
+            (ExtraKind::Kick, &mut self.extra_kick),
+            (ExtraKind::Glove, &mut self.extra_gloves),
+        ] {
+            for _ in 0..*n {
+                self.drops.push((kind, x, y));
+            }
+            *n = 0;
+        }
+    }
+
+    pub fn is_diseased(&self) -> bool {
+        self.disease.is_some()
+    }
+
+    /// `Disease::start()`: aplica el efecto.
+    fn start_disease(&mut self, kind: DiseaseKind) {
+        match kind {
+            DiseaseKind::Fast => self.speed += 600,
+            DiseaseKind::PutBomb => self.bomb_always = true,
+            DiseaseKind::Stoned => self.reverse = !self.reverse,
+            DiseaseKind::Frozen => self.active = false,
+        }
+    }
+
+    /// `Disease::stop()`: revierte el efecto.
+    fn stop_disease(&mut self, kind: DiseaseKind) {
+        match kind {
+            DiseaseKind::Fast => self.speed -= 600,
+            DiseaseKind::PutBomb => self.bomb_always = false,
+            DiseaseKind::Stoned => self.reverse = !self.reverse,
+            DiseaseKind::Frozen => self.active = true,
+        }
+    }
+
+    /// `Bomber::infect`: la nueva enfermedad empieza antes de curar la anterior, como en el
+    /// original (importa para `Stoned`, cuyo efecto es un interruptor).
+    pub fn infect(&mut self, kind: DiseaseKind) {
+        self.start_disease(kind);
+        let new = Disease {
+            kind,
+            countdown: kind.duration(),
+        };
+        if let Some(old) = self.disease.replace(new) {
+            self.stop_disease(old.kind);
+        }
+    }
+
+    /// `Bomber::loose_disease`: se cura y suelta el extra de su enfermedad.
+    pub fn loose_disease(&mut self) {
+        if let Some(d) = self.disease.take() {
+            self.stop_disease(d.kind);
+            self.drops
+                .push((d.kind.extra(), self.get_x(), self.get_y()));
+        }
+    }
+
+    /// `Controller_Keyboard::is_*`: con `Stoned` izquierda/derecha y arriba/abajo se
+    /// intercambian; congelado no responde nada; `PutBomb` ignora la tecla de bomba.
+    fn filter_input(&self, i: Input) -> Input {
+        let mut o = if self.reverse {
+            Input {
+                left: i.right,
+                right: i.left,
+                up: i.down,
+                down: i.up,
+                bomb: i.bomb,
+            }
+        } else {
+            i
+        };
+        if !self.active {
+            o = Input::default();
+        }
+        // `bomb_mode == ALWAYS` devuelve `true` incluso congelado.
+        o.bomb = self.bomb_always || (o.bomb && self.active);
+        o
+    }
+
     /// `Bomber::gain_extra_*`; los máximos son los de `Config::max_*` del original.
     pub fn gain_extra_bomb(&mut self) {
         if MAX_BOMBS > self.bombs {
             self.bombs += 1;
+            self.extra_bombs += 1;
             self.cur_bombs += 1;
         }
     }
@@ -93,22 +204,26 @@ impl Bomber {
     pub fn gain_extra_power(&mut self) {
         if MAX_POWER > self.power {
             self.power += 1;
+            self.extra_power += 1;
         }
     }
 
     pub fn gain_extra_skateboard(&mut self) {
         if MAX_SKATEBOARDS > self.skateboards {
             self.skateboards += 1;
+            self.extra_skateboards += 1;
             self.speed += 40;
         }
     }
 
     pub fn gain_extra_kick(&mut self) {
         self.can_kick = true;
+        self.extra_kick += 1;
     }
 
     pub fn gain_extra_glove(&mut self) {
         self.gloves += 1;
+        self.extra_gloves += 1;
     }
 
     /// `Bomber::die()`. Devuelve `true` si acaba de morir.
@@ -119,6 +234,9 @@ impl Bomber {
         }
         self.dead = true;
         self.deaths += 1;
+        if !self.fallen_down {
+            self.loose_all_extras();
+        }
         self.x = 0.0;
         self.y = 0.0;
         true
@@ -166,6 +284,16 @@ impl Bomber {
         if self.dead {
             return action;
         }
+        // Disease::act: la enfermedad se cura sola al agotarse el contador.
+        if let Some(mut d) = self.disease.take() {
+            d.countdown -= dt;
+            if d.countdown < 0.0 {
+                self.stop_disease(d.kind);
+            } else {
+                self.disease = Some(d);
+            }
+        }
+        let input = self.filter_input(input);
         if self.falling {
             self.continue_falling(dt);
         }

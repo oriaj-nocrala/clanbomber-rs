@@ -1,5 +1,6 @@
 //! Extras que sueltan las cajas (ClanBomber2: Extra*.cpp, MapTile::spawn_extra).
 
+use crate::flight::Flight;
 use crate::rng::Rng;
 
 /// Duración del parpadeo antes de desaparecer cuando una explosión lo alcanza.
@@ -55,33 +56,35 @@ impl Default for ExtraConfig {
 
 #[derive(Clone, Debug)]
 pub struct Extra {
-    /// Posición en píxeles (esquina de la casilla).
-    pub x: i32,
-    pub y: i32,
+    /// Posición en píxeles (esquina de la casilla; fraccionaria durante el vuelo).
+    pub x: f32,
+    pub y: f32,
     pub kind: ExtraKind,
     pub destroyed: bool,
     pub destroy_countdown: f32,
     pub delete_me: bool,
     pub falling: bool,
     pub fall_countdown: f32,
+    pub flight: Flight,
 }
 
 impl Extra {
     pub fn new(x: i32, y: i32, kind: ExtraKind) -> Self {
         Extra {
-            x,
-            y,
+            x: x as f32,
+            y: y as f32,
             kind,
             destroyed: false,
             destroy_countdown: 0.0,
             delete_me: false,
             falling: false,
             fall_countdown: 0.0,
+            flight: Flight::default(),
         }
     }
 
     pub fn tile(&self) -> (i32, i32) {
-        ((self.x + 20) / 40, (self.y + 20) / 40)
+        (((self.x as i32) + 20) / 40, ((self.y as i32) + 20) / 40)
     }
 
     /// `GameObject::fall()`: cae por un agujero y desaparece tras 1 s.
@@ -92,12 +95,33 @@ impl Extra {
         }
     }
 
-    /// `Extra::destroy()`. TODO(vuelo): los no destruibles deberían volar a una casilla libre.
+    /// ¿Cuenta como presente en la casilla? Los que vuelan no (`maptilize_objects`).
+    pub fn rests_on_tile(&self) -> bool {
+        !self.flight.active
+    }
+
+    /// `Extra::destroy()` para los destruibles: parpadean 0.5 s y desaparecen. Los demás
+    /// (enfermedades) salen volando: lo resuelve el `World`, que sortea el destino.
     pub fn destroy(&mut self) {
         if !self.destroyed && self.kind.destroyable() {
             self.destroyed = true;
             self.destroy_countdown = EXTRA_DESTROY_TIME;
         }
+    }
+
+    /// `GameObject::fly_to(maptile)`: sale despedido hacia la esquina de la casilla.
+    /// Velocidad base 240 px/s (la de cualquier `GameObject`).
+    pub fn fly_to(&mut self, tile: (usize, usize)) {
+        if !self.falling {
+            let dest = (tile.0 as i32 * 40, tile.1 as i32 * 40);
+            self.flight.start((self.x, self.y), dest, 240);
+        }
+    }
+
+    pub fn continue_flying(&mut self, dt: f32) {
+        let mut pos = (self.x, self.y);
+        self.flight.advance(&mut pos, dt, None);
+        (self.x, self.y) = pos;
     }
 }
 

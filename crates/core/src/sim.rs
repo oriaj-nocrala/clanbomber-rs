@@ -108,7 +108,7 @@ impl World {
     pub fn has_extra(&self, tx: i32, ty: i32) -> bool {
         self.objects
             .iter()
-            .any(|o| matches!(o, Object::Extra(e) if e.tile() == (tx, ty)))
+            .any(|o| matches!(o, Object::Extra(e) if e.rests_on_tile() && e.tile() == (tx, ty)))
     }
 
     pub fn extras(&self) -> impl Iterator<Item = &Extra> {
@@ -153,6 +153,7 @@ impl World {
         }
 
         for i in 0..self.bombers.len() {
+            self.infect_others(i);
             let input = inputs.get(i).copied().unwrap_or_default();
             // Se actúa sobre una copia para poder consultar al resto del mundo.
             let mut me = self.bombers[i].clone();
@@ -166,11 +167,83 @@ impl World {
             self.bombers[i] = me;
             self.apply(i, action);
         }
+        self.flush_drops();
         self.tick += 1;
     }
 
     fn env<'a>(map: &'a Map, view: &'a View<'a>) -> Env<'a> {
         Env { map, q: view }
+    }
+
+    /// `Bomber::infect_others`: un bomber enfermo contagia a los sanos que comparten casilla.
+    fn infect_others(&mut self, i: usize) {
+        let Some(d) = self.bombers[i].disease else {
+            return;
+        };
+        let tile = self.bombers[i].tile();
+        if self.bombers[i].dead {
+            return;
+        }
+        for b in self.bombers.iter_mut() {
+            if !b.dead && !b.is_diseased() && b.tile() == tile {
+                b.infect(d.kind);
+            }
+        }
+    }
+
+    /// `Map::get_passable`: casilla transitable al azar (hasta 1000 intentos).
+    fn get_passable(&mut self) -> Option<(usize, usize)> {
+        for _ in 0..1000 {
+            let x = self.rng.below(crate::map::MAP_WIDTH as u32) as usize;
+            let y = self.rng.below(crate::map::MAP_HEIGHT as u32) as usize;
+            if self.map.is_passable(x as i32, y as i32) {
+                return Some((x, y));
+            }
+        }
+        None
+    }
+
+    /// Coloca los extras que los bombers han soltado (al curarse o morir) y los lanza a una
+    /// casilla libre al azar.
+    fn flush_drops(&mut self) {
+        for k in 0..self.bombers.len() {
+            for (kind, x, y) in std::mem::take(&mut self.bombers[k].drops) {
+                let mut e = Extra::new(x, y, kind);
+                if let Some(t) = self.get_passable() {
+                    e.fly_to(t);
+                }
+                self.objects.push(Object::Extra(e));
+            }
+        }
+    }
+
+    /// `Extra::destroy`: los destruibles parpadean y se borran; los demás salen volando.
+    fn destroy_extra(&mut self, i: usize) {
+        let Object::Extra(e) = &mut self.objects[i] else {
+            return;
+        };
+        if e.destroyed || e.flight.active {
+            return;
+        }
+        if e.kind.destroyable() {
+            e.destroy();
+        } else if let Some(t) = self.get_passable() {
+            if let Object::Extra(e) = &mut self.objects[i] {
+                e.fly_to(t);
+            }
+        }
+    }
+
+    /// Índices de los extras apoyados (no en vuelo) en casillas que cumplen `pred`.
+    fn extras_where(&self, pred: impl Fn((i32, i32)) -> bool) -> Vec<usize> {
+        self.objects
+            .iter()
+            .enumerate()
+            .filter_map(|(i, o)| match o {
+                Object::Extra(e) if e.rests_on_tile() && pred(e.tile()) => Some(i),
+                _ => None,
+            })
+            .collect()
     }
 
     /// Ejecuta lo que pidió el bomber `owner`: patada, lanzamiento y poner bomba.
@@ -200,7 +273,7 @@ impl World {
         }
         for o in self.objects.iter_mut() {
             match o {
-                Object::Bomb(b) if !b.flying && self.map.is_hole(b.tile().0, b.tile().1) => {
+                Object::Bomb(b) if !b.flight.active && self.map.is_hole(b.tile().0, b.tile().1) => {
                     b.fall()
                 }
                 Object::Extra(e) if self.map.is_hole(e.tile().0, e.tile().1) => e.fall(),
@@ -228,12 +301,15 @@ impl World {
         }
     }
 
-    /// `Extra::act`: parpadeo de destrucción y efecto sobre los bombers que lo pisan.
+    /// `Extra::act`: vuelo, caída, parpadeo de destrucción y efecto sobre quien lo pisa.
     fn act_extra(&mut self, i: usize) {
         let Object::Extra(e) = &mut self.objects[i] else {
             return;
         };
-        if e.falling {
+        // GameObject::act: si vuela solo avanza el vuelo (el contador de destrucción corre igual).
+        if e.flight.active {
+            e.continue_flying(TICK_DT);
+        } else if e.falling {
             // En el original un extra que cae nunca se borra pero queda invisible; aquí se borra.
             e.fall_countdown -= TICK_DT;
             if e.fall_countdown < 0.0 {
@@ -248,6 +324,9 @@ impl World {
                 return;
             }
         }
+        if e.flight.active {
+            return;
+        }
         let (tile, kind) = (e.tile(), e.kind);
         let mut taken = false;
         for b in self
@@ -255,14 +334,17 @@ impl World {
             .iter_mut()
             .filter(|b| !b.dead && b.tile() == tile)
         {
-            // TODO(enfermedades): `loose_disease()` y las enfermedades de Joint/Viagra/Koks.
+            // Todo extra cura primero la enfermedad que hubiera (y suelta su extra).
+            b.loose_disease();
             match kind {
                 ExtraKind::Bomb => b.gain_extra_bomb(),
                 ExtraKind::Power => b.gain_extra_power(),
                 ExtraKind::Skateboard => b.gain_extra_skateboard(),
                 ExtraKind::Kick => b.gain_extra_kick(),
                 ExtraKind::Glove => b.gain_extra_glove(),
-                ExtraKind::Joint | ExtraKind::Viagra | ExtraKind::Koks => {}
+                ExtraKind::Joint | ExtraKind::Viagra | ExtraKind::Koks => {
+                    b.infect(kind.disease().expect("extra de enfermedad"))
+                }
             }
             taken = true;
         }
@@ -299,7 +381,7 @@ impl World {
         let mut b = orig.clone();
 
         // GameObject::act: volando solo avanza el vuelo; si no, cae si toca.
-        if b.flying {
+        if b.flight.active {
             b.continue_flying(&self.map, TICK_DT);
         } else if b.falling {
             b.continue_falling(TICK_DT);
@@ -308,14 +390,14 @@ impl World {
         let mut explode = false;
         if b.fallen_down {
             b.delete_me = true;
-        } else if !b.flying {
+        } else if !b.flight.active {
             let view = View {
                 objects: &self.objects,
                 bombers: &self.bombers,
             };
-            if b.fly_progress == 1.0 {
+            if b.flight.progress == 1.0 {
                 // Acaba de aterrizar: si cae sobre otra bomba, rebota una casilla más.
-                b.fly_progress = 0.0;
+                b.flight.progress = 0.0;
                 let (tx, ty) = b.tile();
                 match (view.bomb_at(tx, ty, Some(i)), b.cur_dir) {
                     (Some(_), Some(dir)) => b.throw(dir, 1),
@@ -367,18 +449,12 @@ impl World {
         let has_extra = |tx: i32, ty: i32| {
             objects
                 .iter()
-                .any(|o| matches!(o, Object::Extra(e) if e.tile() == (tx, ty)))
+                .any(|o| matches!(o, Object::Extra(e) if e.rests_on_tile() && e.tile() == (tx, ty)))
         };
         let e = Explosion::new(&mut self.map, &has_extra, x, y, power, owner);
         // MapTile::destroy(): las casillas alcanzadas destruyen los extras que hay en ellas.
-        for &t in &e.destroyed_tiles {
-            for o in self.objects.iter_mut() {
-                if let Object::Extra(x) = o {
-                    if x.tile() == t {
-                        x.destroy();
-                    }
-                }
-            }
+        for i in self.extras_where(|t| e.destroyed_tiles.contains(&t)) {
+            self.destroy_extra(i);
         }
         self.objects.push(Object::Explosion(e));
     }
@@ -431,13 +507,8 @@ impl World {
         }
 
         // destroy_extras: los que están en la cruz y no vuelan.
-        for o in self.objects.iter_mut() {
-            if let Object::Extra(x) = o {
-                let (bx, by) = x.tile();
-                if e.covers(bx, by) {
-                    x.destroy();
-                }
-            }
+        for j in self.extras_where(|(bx, by)| e.covers(bx, by)) {
+            self.destroy_extra(j);
         }
 
         let Object::Explosion(e) = &mut self.objects[i] else {
@@ -453,6 +524,7 @@ impl World {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::disease::DiseaseKind;
     use crate::map::Map;
 
     fn open_world() -> World {
@@ -700,12 +772,12 @@ mod tests {
         w.bombers[0].gloves = 1;
         w.step(&[BOMB]);
         w.step(&[BOMB]);
-        assert!(w.bombs().next().unwrap().flying);
+        assert!(w.bombs().next().unwrap().flight.active);
         for _ in 0..62 {
             w.step(&[]);
         }
         let b = w.bombs().next().unwrap();
-        assert!(!b.flying);
+        assert!(!b.flight.active);
         assert_eq!((b.get_x(), b.get_y()), (9 * 40, 5 * 40));
         // Durante el vuelo la mecha no corre: sigue casi completa.
         assert!(b.countdown > 2.4, "countdown={}", b.countdown);
@@ -716,7 +788,7 @@ mod tests {
         let mut w = world_with(&[]);
         w.step(&[BOMB]);
         w.step(&[BOMB]);
-        assert!(!w.bombs().next().unwrap().flying);
+        assert!(!w.bombs().next().unwrap().flight.active);
     }
 
     #[test]
@@ -729,7 +801,7 @@ mod tests {
             w.step(&[]);
         }
         let b = w.bombs().next().unwrap();
-        assert!(!b.flying);
+        assert!(!b.flight.active);
         assert!(b.get_x() + 39 < 7 * 40, "x={}", b.get_x());
     }
 
@@ -775,5 +847,138 @@ mod tests {
             w.step(&[]);
         }
         assert_eq!(w.bombs().count(), 0);
+    }
+
+    fn put_extra(w: &mut World, kind: ExtraKind, tx: i32, ty: i32) {
+        w.objects
+            .push(Object::Extra(Extra::new(tx * 40, ty * 40, kind)));
+    }
+
+    #[test]
+    fn koks_makes_you_fast_for_ten_seconds() {
+        let mut w = world_with(&[]);
+        put_extra(&mut w, ExtraKind::Koks, 5, 5);
+        w.step(&[]);
+        assert!(w.bombers[0].is_diseased());
+        assert_eq!(w.bombers[0].speed, 690);
+        for _ in 0..(10.0 * 60.0) as usize + 2 {
+            w.step(&[]);
+        }
+        assert!(!w.bombers[0].is_diseased());
+        assert_eq!(w.bombers[0].speed, 90);
+        assert_eq!(w.extras().count(), 0, "curarse solo no suelta nada");
+    }
+
+    #[test]
+    fn joint_reverses_the_controls_and_then_restores_them() {
+        let mut w = world_with(&[]);
+        put_extra(&mut w, ExtraKind::Joint, 5, 5);
+        w.step(&[]);
+        let x0 = w.bombers[0].x;
+        for _ in 0..20 {
+            w.step(&[RIGHT]);
+        }
+        assert!(w.bombers[0].x < x0, "derecha va a la izquierda");
+        for _ in 0..(10.0 * 60.0) as usize {
+            w.step(&[]);
+        }
+        let x1 = w.bombers[0].x;
+        for _ in 0..20 {
+            w.step(&[RIGHT]);
+        }
+        assert!(w.bombers[0].x > x1, "curado: derecha vuelve a ser derecha");
+    }
+
+    #[test]
+    fn viagra_drops_bombs_without_pressing_anything() {
+        let mut w = world_with(&[]);
+        w.bombers[0].bombs = 3;
+        w.bombers[0].cur_bombs = 3;
+        put_extra(&mut w, ExtraKind::Viagra, 5, 5);
+        w.step(&[]);
+        for _ in 0..90 {
+            w.step(&[RIGHT]);
+        }
+        assert!(w.bombs().count() >= 2, "bombs={}", w.bombs().count());
+    }
+
+    #[test]
+    fn disease_spreads_to_healthy_bombers_on_the_same_tile() {
+        let mut w = world_with(&[]);
+        w.bombers[1] = Bomber::new(5 * 40, 5 * 40);
+        w.bombers[0].infect(DiseaseKind::Stoned);
+        w.step(&[]);
+        assert_eq!(
+            w.bombers[1].disease.map(|d| d.kind),
+            Some(DiseaseKind::Stoned)
+        );
+    }
+
+    #[test]
+    fn a_good_extra_cures_and_drops_the_disease_extra() {
+        let mut w = world_with(&[]);
+        w.bombers[0].infect(DiseaseKind::Fast);
+        put_extra(&mut w, ExtraKind::Power, 5, 5);
+        w.step(&[]);
+        assert!(!w.bombers[0].is_diseased());
+        assert_eq!(w.bombers[0].speed, 90);
+        let drops: Vec<_> = w
+            .extras()
+            .filter(|e| !e.delete_me)
+            .map(|e| (e.kind, e.flight.active))
+            .collect();
+        assert_eq!(drops, vec![(ExtraKind::Koks, true)], "el Koks sale volando");
+        // Tras el vuelo queda en una casilla libre, listo para recogerse.
+        for _ in 0..120 {
+            w.step(&[]);
+        }
+        let e = w.extras().next().unwrap();
+        assert!(!e.flight.active);
+        assert_eq!((e.x as i32 % 40, e.y as i32 % 40), (0, 0));
+    }
+
+    #[test]
+    fn dying_drops_the_extras_you_had_gained() {
+        let mut w = world_with(&[]);
+        w.bombers[0].gain_extra_bomb();
+        w.bombers[0].gain_extra_power();
+        w.bombers[0].gain_extra_kick();
+        let mut b = Bomb::new(5, 5, 1, 1);
+        b.countdown = 0.01;
+        w.objects.push(Object::Bomb(b));
+        for _ in 0..8 {
+            w.step(&[]);
+        }
+        assert!(w.bombers[0].dead);
+        let mut kinds: Vec<_> = w.extras().map(|e| e.kind as u8).collect();
+        kinds.sort();
+        assert_eq!(
+            kinds,
+            vec![
+                ExtraKind::Bomb as u8,
+                ExtraKind::Power as u8,
+                ExtraKind::Kick as u8
+            ]
+        );
+    }
+
+    #[test]
+    fn explosions_make_disease_extras_fly_instead_of_destroying_them() {
+        let mut w = world_with(&[]);
+        w.bombers[0] = Bomber::new(1 * 40, 1 * 40);
+        put_extra(&mut w, ExtraKind::Joint, 5, 6);
+        w.objects.push(Object::Bomb(Bomb::new(5, 5, 2, 0)));
+        for _ in 0..(2.5 * 60.0) as usize + 5 {
+            w.step(&[]);
+        }
+        let e = w.extras().next().expect("sigue existiendo");
+        assert!(
+            e.flight.active || (e.x as i32, e.y as i32) != (5 * 40, 6 * 40),
+            "salió despedido"
+        );
+        for _ in 0..180 {
+            w.step(&[]);
+        }
+        assert_eq!(w.extras().count(), 1);
     }
 }
