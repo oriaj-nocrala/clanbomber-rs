@@ -71,6 +71,7 @@ pub struct Renderer {
     vbuf: wgpu::Buffer,
     ibuf: wgpu::Buffer,
     verts: Vec<Vertex>,
+    capture: Option<std::path::PathBuf>,
 }
 
 impl Renderer {
@@ -214,6 +215,7 @@ impl Renderer {
             vbuf,
             ibuf,
             verts: Vec::with_capacity(MAX_QUADS * 4),
+            capture: None,
         };
         // Textura 0: un píxel blanco, para los quads de color plano.
         r.load_rgba(&[255; 4], 1, 1);
@@ -370,40 +372,147 @@ impl Renderer {
             .write_buffer(&self.vbuf, 0, bytemuck::cast_slice(&self.verts));
 
         let mut enc = self.device.create_command_encoder(&Default::default());
-        {
-            let mut pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: None,
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &view,
-                    depth_slice: None,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
-                depth_stencil_attachment: None,
-                timestamp_writes: None,
-                occlusion_query_set: None,
-                multiview_mask: None,
-            });
-            // Letterbox 4:3 centrado.
-            let (sw, sh) = (self.config.width as f32, self.config.height as f32);
-            let scale = (sw / VIRTUAL_W).min(sh / VIRTUAL_H);
-            let (vw, vh) = (VIRTUAL_W * scale, VIRTUAL_H * scale);
-            pass.set_viewport((sw - vw) / 2.0, (sh - vh) / 2.0, vw, vh, 0.0, 1.0);
-            pass.set_pipeline(&self.pipeline);
-            pass.set_bind_group(0, &self.bind_group, &[]);
-            pass.set_vertex_buffer(0, self.vbuf.slice(..));
-            pass.set_index_buffer(self.ibuf.slice(..), wgpu::IndexFormat::Uint32);
-            for b in &self.batches {
-                pass.set_bind_group(1, &self.textures[b.tex.0].bind_group, &[]);
-                pass.draw_indexed(b.first_quad * 6..(b.first_quad + b.quads) * 6, 0, 0..1);
-            }
-        }
+        // Letterbox 4:3 centrado.
+        let (sw, sh) = (self.config.width as f32, self.config.height as f32);
+        let scale = (sw / VIRTUAL_W).min(sh / VIRTUAL_H);
+        let (vw, vh) = (VIRTUAL_W * scale, VIRTUAL_H * scale);
+        self.record_pass(&mut enc, &view, [(sw - vw) / 2.0, (sh - vh) / 2.0, vw, vh]);
         self.queue.submit([enc.finish()]);
         self.queue.present(frame);
+        if let Some(path) = self.capture.take() {
+            if let Err(e) = self.save_capture(&path) {
+                eprintln!("no se pudo guardar la captura {path:?}: {e}");
+            }
+        }
         self.verts.clear();
         self.batches.clear();
+    }
+
+    /// Dibuja los quads acumulados en `view` dentro del rectángulo `viewport` (x, y, ancho, alto).
+    fn record_pass(
+        &self,
+        enc: &mut wgpu::CommandEncoder,
+        view: &wgpu::TextureView,
+        viewport: [f32; 4],
+    ) {
+        let mut pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: None,
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                    store: wgpu::StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.set_viewport(viewport[0], viewport[1], viewport[2], viewport[3], 0.0, 1.0);
+        pass.set_pipeline(&self.pipeline);
+        pass.set_bind_group(0, &self.bind_group, &[]);
+        pass.set_vertex_buffer(0, self.vbuf.slice(..));
+        pass.set_index_buffer(self.ibuf.slice(..), wgpu::IndexFormat::Uint32);
+        for b in &self.batches {
+            pass.set_bind_group(1, &self.textures[b.tex.0].bind_group, &[]);
+            pass.draw_indexed(b.first_quad * 6..(b.first_quad + b.quads) * 6, 0, 0..1);
+        }
+    }
+
+    /// Pide que el próximo `render()` guarde además el lienzo virtual (800x600, sin bandas) como
+    /// PNG. No toca la ventana ni captura nada del escritorio.
+    pub fn request_capture(&mut self, path: impl Into<std::path::PathBuf>) {
+        self.capture = Some(path.into());
+    }
+
+    /// Vuelve a dibujar el frame actual en una textura propia y la lee de la GPU.
+    fn save_capture(&self, path: &std::path::Path) -> Result<(), String> {
+        let (w, h) = (VIRTUAL_W as u32, VIRTUAL_H as u32);
+        let tex = self.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("captura"),
+            size: wgpu::Extent3d {
+                width: w,
+                height: h,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: self.config.format,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+            view_formats: &[],
+        });
+        // Las filas de la copia se alinean a 256 bytes.
+        let row = (w * 4).next_multiple_of(wgpu::COPY_BYTES_PER_ROW_ALIGNMENT);
+        let buf = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("captura"),
+            size: (row * h) as u64,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+        let mut enc = self.device.create_command_encoder(&Default::default());
+        let view = tex.create_view(&Default::default());
+        self.record_pass(&mut enc, &view, [0.0, 0.0, VIRTUAL_W, VIRTUAL_H]);
+        enc.copy_texture_to_buffer(
+            wgpu::TexelCopyTextureInfo {
+                texture: &tex,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            wgpu::TexelCopyBufferInfo {
+                buffer: &buf,
+                layout: wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(row),
+                    rows_per_image: Some(h),
+                },
+            },
+            wgpu::Extent3d {
+                width: w,
+                height: h,
+                depth_or_array_layers: 1,
+            },
+        );
+        self.queue.submit([enc.finish()]);
+
+        let (tx, rx) = std::sync::mpsc::channel();
+        buf.slice(..).map_async(wgpu::MapMode::Read, move |r| {
+            let _ = tx.send(r);
+        });
+        self.device
+            .poll(wgpu::PollType::wait_indefinitely())
+            .map_err(|e| format!("{e:?}"))?;
+        rx.recv()
+            .map_err(|e| e.to_string())?
+            .map_err(|e| format!("{e:?}"))?;
+
+        let data = buf
+            .slice(..)
+            .get_mapped_range()
+            .map_err(|e| format!("{e:?}"))?;
+        let bgra = matches!(
+            self.config.format,
+            wgpu::TextureFormat::Bgra8Unorm | wgpu::TextureFormat::Bgra8UnormSrgb
+        );
+        let mut rgba = Vec::with_capacity((w * h * 4) as usize);
+        for y in 0..h as usize {
+            for px in data[y * row as usize..][..(w * 4) as usize].chunks_exact(4) {
+                rgba.extend_from_slice(&if bgra {
+                    [px[2], px[1], px[0], 255]
+                } else {
+                    [px[0], px[1], px[2], 255]
+                });
+            }
+        }
+        drop(data);
+        buf.unmap();
+        image::RgbaImage::from_raw(w, h, rgba)
+            .ok_or_else(|| "tamaño de imagen inválido".to_string())?
+            .save(path)
+            .map_err(|e| e.to_string())
     }
 }
