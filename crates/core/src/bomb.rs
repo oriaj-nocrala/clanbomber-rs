@@ -1,5 +1,6 @@
 //! Bombas y explosiones (ClanBomber2: Bomb.cpp, Explosion.cpp).
 
+use crate::extra::Extra;
 use crate::map::{Map, TILE_PIXELS};
 
 const T: i32 = TILE_PIXELS as i32;
@@ -72,17 +73,27 @@ pub struct Explosion {
     pub down: i32,
     pub period: f32,
     pub delete_me: bool,
+    /// Casillas donde `do_destruction` llamó a `destroy()` (para destruir extras ahí).
+    pub destroyed_tiles: Vec<(i32, i32)>,
 }
 
 impl Explosion {
     /// `Explosion::Explosion`: calcula longitudes y destruye cajas.
     /// TODO(extras): un extra en la casilla también frena el fuego (`has_extra`).
-    pub fn new(map: &mut Map, x: i32, y: i32, power: i32, owner: usize) -> Self {
+    pub fn new(
+        map: &mut Map,
+        has_extra: &dyn Fn(i32, i32) -> bool,
+        x: i32,
+        y: i32,
+        power: i32,
+        owner: usize,
+    ) -> Self {
         let (tx, ty) = ((x + 20) / T, (y + 20) / T);
         let len = |dx: i32, dy: i32| {
             let mut i = 1;
             while i <= power {
-                if map.blocking_tile(tx + dx * i, ty + dy * i) {
+                let (px, py) = (tx + dx * i, ty + dy * i);
+                if map.blocking_tile(px, py) || has_extra(px, py) {
                     break;
                 }
                 i += 1;
@@ -92,18 +103,21 @@ impl Explosion {
         let (left, right, up, down) = (len(-1, 0), len(1, 0), len(0, -1), len(0, 1));
 
         // do_destruction: la casilla central y la que frenó cada brazo (si lo frenó algo).
-        map.destroy(tx, ty);
+        let mut destroyed_tiles = vec![(tx, ty)];
         if left < power {
-            map.destroy(tx - left - 1, ty);
+            destroyed_tiles.push((tx - left - 1, ty));
         }
         if right < power {
-            map.destroy(tx + right + 1, ty);
+            destroyed_tiles.push((tx + right + 1, ty));
         }
         if up < power {
-            map.destroy(tx, ty - up - 1);
+            destroyed_tiles.push((tx, ty - up - 1));
         }
         if down < power {
-            map.destroy(tx, ty + down + 1);
+            destroyed_tiles.push((tx, ty + down + 1));
+        }
+        for &(x, y) in &destroyed_tiles {
+            map.destroy(x, y);
         }
 
         Explosion {
@@ -117,6 +131,7 @@ impl Explosion {
             down,
             period: EXPLOSION_PERIOD,
             delete_me: false,
+            destroyed_tiles,
         }
     }
 
@@ -149,6 +164,7 @@ impl Explosion {
 pub enum Object {
     Bomb(Bomb),
     Explosion(Explosion),
+    Extra(Extra),
 }
 
 impl Object {
@@ -156,6 +172,7 @@ impl Object {
         match self {
             Object::Bomb(b) => b.delete_me,
             Object::Explosion(e) => e.delete_me,
+            Object::Extra(x) => x.delete_me,
         }
     }
 }

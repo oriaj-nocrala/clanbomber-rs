@@ -175,8 +175,9 @@ impl Map {
             .any(|c| c.x as i32 == tx && c.y as i32 == ty)
     }
 
-    /// `Map::act()`: avanza las cajas que se desmoronan.
-    pub fn act(&mut self, dt: f32) {
+    /// `Map::act()`: avanza las cajas que se desmoronan. Devuelve las casillas que acaban
+    /// de pasar a suelo, donde el original llama a `spawn_extra()`.
+    pub fn act(&mut self, dt: f32) -> Vec<(usize, usize)> {
         for c in &mut self.crumbling {
             c.left -= dt;
         }
@@ -187,10 +188,10 @@ impl Map {
             .filter(|c| c.left <= 0.0)
             .collect();
         self.crumbling.retain(|c| c.left > 0.0);
-        for c in done {
-            // TODO(extras): MapTile_Box::act llama a spawn_extra() al terminar.
+        for c in &done {
             self.tiles[c.x][c.y] = Tile::Ground;
         }
+        done.iter().map(|c| (c.x, c.y)).collect()
     }
 
     pub fn set(&mut self, x: usize, y: usize, t: Tile) {

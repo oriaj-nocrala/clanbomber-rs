@@ -36,9 +36,17 @@ pub struct Bomber {
     pub power: i32,
     pub kills: i32,
     pub deaths: i32,
+    pub can_kick: bool,
+    pub gloves: i32,
+    pub skateboards: i32,
 }
 
 const T: i32 = TILE_PIXELS as i32;
+
+// Config::max_* del original.
+const MAX_SKATEBOARDS: i32 = 5;
+const MAX_POWER: i32 = 12;
+const MAX_BOMBS: i32 = 9;
 
 impl Bomber {
     /// `orig_x`/`orig_y` en píxeles. Mira hacia la izquierda si nace a la derecha de x=300.
@@ -56,12 +64,44 @@ impl Bomber {
             power: 1,
             kills: 0,
             deaths: 0,
+            can_kick: false,
+            gloves: 0,
+            skateboards: 0,
         }
     }
 
     /// Casilla (en tiles) sobre la que está el bomber: `get_maptile()` del original.
     pub fn tile(&self) -> (i32, i32) {
         ((self.get_x() + 20) / T, (self.get_y() + 20) / T)
+    }
+
+    /// `Bomber::gain_extra_*`; los máximos son los de `Config::max_*` del original.
+    pub fn gain_extra_bomb(&mut self) {
+        if MAX_BOMBS > self.bombs {
+            self.bombs += 1;
+            self.cur_bombs += 1;
+        }
+    }
+
+    pub fn gain_extra_power(&mut self) {
+        if MAX_POWER > self.power {
+            self.power += 1;
+        }
+    }
+
+    pub fn gain_extra_skateboard(&mut self) {
+        if MAX_SKATEBOARDS > self.skateboards {
+            self.skateboards += 1;
+            self.speed += 40;
+        }
+    }
+
+    pub fn gain_extra_kick(&mut self) {
+        self.can_kick = true;
+    }
+
+    pub fn gain_extra_glove(&mut self) {
+        self.gloves += 1;
     }
 
     /// `Bomber::die()`. Devuelve `true` si acaba de morir.

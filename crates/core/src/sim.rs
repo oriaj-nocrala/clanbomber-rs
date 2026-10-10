@@ -1,6 +1,8 @@
 use crate::bomb::{Bomb, Explosion, Object};
 use crate::bomber::{Bomber, Input};
+use crate::extra::{roll_extra, Extra, ExtraConfig, ExtraKind};
 use crate::map::{Map, TILE_PIXELS};
+use crate::rng::Rng;
 
 /// Frecuencia fija de la simulación. El render interpola entre ticks.
 pub const TICK_HZ: u32 = 60;
@@ -14,15 +16,24 @@ pub struct World {
     /// Bombas y explosiones en orden de creación (`ClanBomberApplication::objects`).
     pub objects: Vec<Object>,
     pub tick: u64,
+    pub rng: Rng,
+    pub extra_config: ExtraConfig,
 }
 
 impl World {
     pub fn new(map: Map) -> Self {
+        Self::with_seed(map, 0)
+    }
+
+    /// La semilla fija todo lo aleatorio (extras que sueltan las cajas).
+    pub fn with_seed(map: Map, seed: u64) -> Self {
         World {
             map,
             bombers: Vec::new(),
             objects: Vec::new(),
             tick: 0,
+            rng: Rng::new(seed),
+            extra_config: ExtraConfig::default(),
         }
     }
 
@@ -44,6 +55,19 @@ impl World {
             .any(|o| matches!(o, Object::Bomb(b) if b.tile() == (tx, ty)))
     }
 
+    pub fn has_extra(&self, tx: i32, ty: i32) -> bool {
+        self.objects
+            .iter()
+            .any(|o| matches!(o, Object::Extra(e) if e.tile() == (tx, ty)))
+    }
+
+    pub fn extras(&self) -> impl Iterator<Item = &Extra> {
+        self.objects.iter().filter_map(|o| match o {
+            Object::Extra(e) => Some(e),
+            _ => None,
+        })
+    }
+
     pub fn bombs(&self) -> impl Iterator<Item = &Bomb> {
         self.objects.iter().filter_map(|o| match o {
             Object::Bomb(b) => Some(b),
@@ -63,13 +87,17 @@ impl World {
     /// objetos y bombers (`delete_some` + `act_all`).
     pub fn step(&mut self, inputs: &[Input]) {
         self.delete_some();
-        self.map.act(TICK_DT);
+        // Una caja que acaba de desmoronarse puede soltar un extra (MapTile_Box::act).
+        for (x, y) in self.map.act(TICK_DT) {
+            self.spawn_extra(x as i32 * 40, y as i32 * 40);
+        }
 
         // Los objetos creados durante este tick (explosiones) actúan a partir del siguiente.
         for i in 0..self.objects.len() {
             match &self.objects[i] {
                 Object::Bomb(_) => self.act_bomb(i),
                 Object::Explosion(_) => self.act_explosion(i),
+                Object::Extra(_) => self.act_extra(i),
             }
         }
 
@@ -101,6 +129,50 @@ impl World {
         self.bombers[owner].cur_bombs -= 1;
         self.objects
             .push(Object::Bomb(Bomb::new(tx, ty, power, owner)));
+    }
+
+    /// `MapTile::spawn_extra()`.
+    fn spawn_extra(&mut self, x: i32, y: i32) {
+        if let Some(kind) = roll_extra(&mut self.rng, &self.extra_config) {
+            self.objects.push(Object::Extra(Extra::new(x, y, kind)));
+        }
+    }
+
+    /// `Extra::act`: parpadeo de destrucción y efecto sobre los bombers que lo pisan.
+    fn act_extra(&mut self, i: usize) {
+        let Object::Extra(e) = &mut self.objects[i] else {
+            return;
+        };
+        if e.destroyed {
+            e.destroy_countdown -= TICK_DT;
+            if e.destroy_countdown <= 0.0 {
+                e.delete_me = true;
+                return;
+            }
+        }
+        let (tile, kind) = (e.tile(), e.kind);
+        let mut taken = false;
+        for b in self
+            .bombers
+            .iter_mut()
+            .filter(|b| !b.dead && b.tile() == tile)
+        {
+            // TODO(enfermedades): `loose_disease()` y las enfermedades de Joint/Viagra/Koks.
+            match kind {
+                ExtraKind::Bomb => b.gain_extra_bomb(),
+                ExtraKind::Power => b.gain_extra_power(),
+                ExtraKind::Skateboard => b.gain_extra_skateboard(),
+                ExtraKind::Kick => b.gain_extra_kick(),
+                ExtraKind::Glove => b.gain_extra_glove(),
+                ExtraKind::Joint | ExtraKind::Viagra | ExtraKind::Koks => {}
+            }
+            taken = true;
+        }
+        if taken {
+            if let Object::Extra(e) = &mut self.objects[i] {
+                e.delete_me = true;
+            }
+        }
     }
 
     /// `ClanBomberApplication::delete_some`; el destructor de `Bomb` devuelve la bomba al bomber.
@@ -146,7 +218,23 @@ impl World {
         // `snap()`: la bomba se alinea con la casilla antes de explotar.
         let (x, y) = (((b.x + 20) / 40) * 40, ((b.y + 20) / 40) * 40);
         let (power, owner) = (b.power, b.owner);
-        let e = Explosion::new(&mut self.map, x, y, power, owner);
+        let objects = &self.objects;
+        let has_extra = |tx: i32, ty: i32| {
+            objects
+                .iter()
+                .any(|o| matches!(o, Object::Extra(e) if e.tile() == (tx, ty)))
+        };
+        let e = Explosion::new(&mut self.map, &has_extra, x, y, power, owner);
+        // MapTile::destroy(): las casillas alcanzadas destruyen los extras que hay en ellas.
+        for &t in &e.destroyed_tiles {
+            for o in self.objects.iter_mut() {
+                if let Object::Extra(x) = o {
+                    if x.tile() == t {
+                        x.destroy();
+                    }
+                }
+            }
+        }
         self.objects.push(Object::Explosion(e));
     }
 
@@ -317,5 +405,83 @@ mod tests {
             w.step(&[]);
         }
         assert_eq!(w.explosions().filter(|e| e.tx == 7).count(), 1);
+    }
+
+    #[test]
+    fn walking_over_extras_applies_them_once() {
+        let mut w = open_world();
+        let (x, y) = (5 * 40, 5 * 40);
+        for k in [
+            ExtraKind::Bomb,
+            ExtraKind::Power,
+            ExtraKind::Skateboard,
+            ExtraKind::Kick,
+        ] {
+            w.objects.push(Object::Extra(Extra::new(x, y, k)));
+        }
+        w.step(&[]);
+        let b = &w.bombers[0];
+        assert_eq!(
+            (b.bombs, b.cur_bombs, b.power, b.speed, b.can_kick),
+            (2, 2, 2, 130, true)
+        );
+        w.step(&[]);
+        w.step(&[]);
+        assert_eq!(w.extras().count(), 0, "se consumen");
+        assert_eq!(w.bombers[0].power, 2);
+    }
+
+    #[test]
+    fn explosion_destroys_extras_but_not_diseases() {
+        let mut w = open_world();
+        w.bombers[0] = Bomber::new(1 * 40, 1 * 40);
+        w.objects
+            .push(Object::Extra(Extra::new(5 * 40, 8 * 40, ExtraKind::Bomb)));
+        w.objects
+            .push(Object::Extra(Extra::new(5 * 40, 8 * 40, ExtraKind::Joint)));
+        w.objects.push(Object::Bomb(Bomb::new(5, 7, 2, 0)));
+        // 2.5 s de mecha + 0.5 s de parpadeo del extra destruido.
+        for _ in 0..(3.0 * 60.0) as usize + 6 {
+            w.step(&[]);
+        }
+        let left: Vec<_> = w.extras().map(|e| e.kind).collect();
+        assert_eq!(left, vec![ExtraKind::Joint]);
+    }
+
+    #[test]
+    fn extra_stops_the_fire() {
+        let mut w = open_world();
+        w.bombers[0] = Bomber::new(1 * 40, 1 * 40);
+        // Extra en (7,5): una bomba potencia 4 en (5,5) llega solo hasta (6,5).
+        w.objects
+            .push(Object::Extra(Extra::new(7 * 40, 5 * 40, ExtraKind::Joint)));
+        w.objects.push(Object::Bomb(Bomb::new(5, 5, 4, 0)));
+        for _ in 0..(2.5 * 60.0) as usize + 3 {
+            w.step(&[]);
+        }
+        let e = w.explosions().next().unwrap();
+        assert_eq!((e.left, e.right), (4, 1));
+    }
+
+    #[test]
+    fn crumbled_boxes_drop_extras_deterministically() {
+        let build = || {
+            let mut rows = vec![" ".repeat(17); 13];
+            for x in 0..17 {
+                rows[2].replace_range(x..x + 1, "+");
+            }
+            let src = "x\n1\n".to_owned() + &rows.concat();
+            let mut w = World::with_seed(Map::parse(&src).unwrap(), 11);
+            for x in 0..17 {
+                w.map.destroy(x, 2);
+            }
+            for _ in 0..40 {
+                w.step(&[]);
+            }
+            w.extras().map(|e| (e.x, e.kind)).collect::<Vec<_>>()
+        };
+        let (a, b) = (build(), build());
+        assert_eq!(a, b);
+        assert!(!a.is_empty() && a.len() < 17);
     }
 }
