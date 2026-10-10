@@ -26,9 +26,16 @@ cargo fmt
   bombas/explosiones, extras y `World::step` (`sim.rs`).
 - `crates/render` (`cb-render`): wgpu. Batcher de quads en resolución virtual 800x600 con letterbox,
   texturas (`load_texture`), hojas de sprites (`Sheet`), texto TrueType con atlas de glifos (`load_font`,
-  `text`, vía `fontdue`), shader en `quad.wgsl`.
+  `text`, vía `fontdue`), shader en `quad.wgsl`. La escena se dibuja en una textura `Rgba16Float`
+  intermedia (al tamaño del letterbox) y `fx.rs` la compone en la ventana: partículas simuladas por compute
+  (`particles.wgsl`, anillo de 16384; la CPU solo manda `Burst`s), bloom por compute (`bloom.wgsl`, a 400x300)
+  y composición con CRT opcional y aberración al temblar (`post.wgsl`). Sin compute shaders (GL antiguo) se
+  ve como el original. Un test valida los WGSL con naga (la CI no tiene GPU).
 - `crates/game` (`cb-game`): binario winit. Loop con acumulador de tiempo → `World::step` a 60 Hz → dibujo.
-  `assets.rs` carga texturas y fuentes; `draw.rs` dibuja mapa, HUD y marcador; `audio.rs` (efectos y música; el núcleo solo emite `GameEvent`); `menu.rs` es el menú en árbol
+  `assets.rs` carga texturas y fuentes; `draw.rs` dibuja mapa, HUD y marcador; `sparks.rs` compara el
+  mundo con el fotograma anterior y lanza ráfagas de partículas (explosiones, cajas, muertes, mechas);
+  `video.rs` son las opciones gráficas (bloom, partículas, CRT), en `video.txt` aparte de `Config` para no
+  entrar en `World::state_hash`; `audio.rs` (efectos y música; el núcleo solo emite `GameEvent`); `menu.rs` es el menú en árbol
   (opciones de `Config`, guardadas al cambiar); `intro.rs`, `player_setup.rs`, `map_select.rs`, `map_editor.rs`, `credits.rs` y `help.rs`
   son las demás pantallas de menú (`screen.rs`: `Flow` y `TextEdit`). Pantallas: menú ⇄ partida (Esc vuelve al menú; Espacio pasa
   del marcador a la siguiente ronda).
@@ -93,4 +100,4 @@ enum (`CurrentSurfaceTexture`), `VertexState.buffers` es `&[Option<_>]`, `bind_g
    música Ogg en bucle; F2 la activa, P pausa), cadáveres, trozos, sangre en los créditos y
    temblor de explosiones. Equipos hechos (rondas por equipo, marcador de equipos, la IA no vuela a compañeros). Mandos hechos (gilrs: stick o cruceta + botón A).
    No se portaron a propósito la segunda IA (AI_mass) ni el controlador de ratón (RCMOUSE).
-6. Partículas (compute), sprites con IA.
+6. ~~Partículas (compute)~~, bloom y CRT hechos (Options → Graphic Options). Pendiente: sprites con IA.
