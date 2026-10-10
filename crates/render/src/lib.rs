@@ -1,12 +1,15 @@
 //! Renderer 2D sobre wgpu: batcher de quads en resolución virtual 800x600
-//! con letterboxing. Las texturas y las partículas por compute se añaden aquí.
+//! con letterboxing. La escena se dibuja en una textura flotante intermedia, con partículas
+//! simuladas por compute, y una pasada final la compone en la ventana (bloom, CRT).
 
+mod fx;
 mod text;
 
 use std::sync::Arc;
 use wgpu::util::DeviceExt;
 use winit::window::Window;
 
+pub use fx::{Burst, Effects, ParticleKind};
 pub use text::{Align, Font, FontError};
 
 pub const VIRTUAL_W: f32 = 800.0;
@@ -72,6 +75,14 @@ pub struct Renderer {
     ibuf: wgpu::Buffer,
     verts: Vec<Vertex>,
     capture: Option<std::path::PathBuf>,
+    post: fx::Post,
+    /// `None` si la GPU no tiene compute shaders.
+    particles: Option<fx::Particles>,
+    effects: Effects,
+    /// Lote antes del cual se dibujan las partículas (si se pidió con `particle_layer`).
+    particle_layer: Option<usize>,
+    shake: f32,
+    started: std::time::Instant,
 }
 
 impl Renderer {
@@ -85,6 +96,12 @@ impl Renderer {
             })
             .await
             .expect("adapter");
+        // Partículas y bloom necesitan compute shaders (los hay en Vulkan, Metal y DX12; no en
+        // algunos backends GL antiguos, donde el juego se ve como el original).
+        let compute = adapter
+            .get_downlevel_capabilities()
+            .flags
+            .contains(wgpu::DownlevelFlags::COMPUTE_SHADERS);
         let (device, queue) = adapter
             .request_device(&wgpu::DeviceDescriptor::default())
             .await
@@ -174,7 +191,7 @@ impl Renderer {
                 entry_point: Some("fs"),
                 compilation_options: Default::default(),
                 targets: &[Some(wgpu::ColorTargetState {
-                    format: config.format,
+                    format: fx::SCENE_FORMAT,
                     blend: Some(wgpu::BlendState::ALPHA_BLENDING),
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
@@ -201,6 +218,13 @@ impl Renderer {
             usage: wgpu::BufferUsages::INDEX,
         });
 
+        let post = fx::Post::new(
+            &device,
+            config.format,
+            letterbox(config.width, config.height).1,
+            compute,
+        );
+        let particles = compute.then(|| fx::Particles::new(&device, &globals));
         let mut r = Renderer {
             surface,
             device,
@@ -216,6 +240,12 @@ impl Renderer {
             ibuf,
             verts: Vec::with_capacity(MAX_QUADS * 4),
             capture: None,
+            post,
+            particles,
+            effects: Effects::default(),
+            particle_layer: None,
+            shake: 0.0,
+            started: std::time::Instant::now(),
         };
         // Textura 0: un píxel blanco, para los quads de color plano.
         r.load_rgba(&[255; 4], 1, 1);
@@ -281,6 +311,46 @@ impl Renderer {
         self.config.width = w;
         self.config.height = h;
         self.surface.configure(&self.device, &self.config);
+        self.post.resize(&self.device, letterbox(w, h).1);
+    }
+
+    pub fn set_effects(&mut self, effects: Effects) {
+        self.effects = effects;
+    }
+
+    pub fn effects(&self) -> Effects {
+        self.effects
+    }
+
+    /// Si la GPU puede con partículas y bloom (compute shaders).
+    pub fn has_compute(&self) -> bool {
+        self.particles.is_some()
+    }
+
+    /// Lanza una ráfaga de partículas (se ignora si están apagadas o no hay compute).
+    pub fn emit(&mut self, burst: &Burst) {
+        if let (true, Some(p)) = (self.effects.particles, self.particles.as_mut()) {
+            p.emit(burst);
+        }
+    }
+
+    /// Hace avanzar la simulación de partículas `dt` segundos en el próximo `render()`
+    /// (sin llamarlo, como en pausa, se quedan quietas).
+    pub fn advance_particles(&mut self, dt: f32) {
+        if let Some(p) = self.particles.as_mut() {
+            p.advance(dt);
+        }
+    }
+
+    /// Las partículas se dibujarán aquí, entre lo ya pedido y lo que venga (por defecto no se
+    /// dibujan).
+    pub fn particle_layer(&mut self) {
+        self.particle_layer = Some(self.batches.len());
+    }
+
+    /// Temblor de pantalla en [0, 1]: separa los canales de color en la composición.
+    pub fn set_shake(&mut self, shake: f32) {
+        self.shake = shake;
     }
 
     /// Rectángulo relleno en coordenadas virtuales (800x600).
@@ -362,8 +432,7 @@ impl Renderer {
             _ => {
                 // Superficie perdida/desactualizada: se reconfigura y se reintenta el siguiente frame.
                 self.surface.configure(&self.device, &self.config);
-                self.verts.clear();
-                self.batches.clear();
+                self.clear_frame();
                 return;
             }
         };
@@ -372,11 +441,25 @@ impl Renderer {
             .write_buffer(&self.vbuf, 0, bytemuck::cast_slice(&self.verts));
 
         let mut enc = self.device.create_command_encoder(&Default::default());
-        // Letterbox 4:3 centrado.
-        let (sw, sh) = (self.config.width as f32, self.config.height as f32);
-        let scale = (sw / VIRTUAL_W).min(sh / VIRTUAL_H);
-        let (vw, vh) = (VIRTUAL_W * scale, VIRTUAL_H * scale);
-        self.record_pass(&mut enc, &view, [(sw - vw) / 2.0, (sh - vh) / 2.0, vw, vh]);
+        if let Some(p) = self.particles.as_mut() {
+            if self.effects.particles {
+                p.simulate(&self.queue, &mut enc);
+            } else {
+                p.discard();
+            }
+        }
+        self.record_scene(&mut enc);
+        if self.effects.bloom {
+            self.post.bloom(&mut enc);
+        }
+        self.post.set_params(
+            &self.queue,
+            self.effects,
+            self.shake,
+            self.started.elapsed().as_secs_f32(),
+        );
+        let (viewport, _) = letterbox(self.config.width, self.config.height);
+        self.post.composite(&mut enc, &view, viewport);
         self.queue.submit([enc.finish()]);
         self.queue.present(frame);
         if let Some(path) = self.capture.take() {
@@ -384,17 +467,18 @@ impl Renderer {
                 eprintln!("no se pudo guardar la captura {path:?}: {e}");
             }
         }
-        self.verts.clear();
-        self.batches.clear();
+        self.clear_frame();
     }
 
-    /// Dibuja los quads acumulados en `view` dentro del rectángulo `viewport` (x, y, ancho, alto).
-    fn record_pass(
-        &self,
-        enc: &mut wgpu::CommandEncoder,
-        view: &wgpu::TextureView,
-        viewport: [f32; 4],
-    ) {
+    fn clear_frame(&mut self) {
+        self.verts.clear();
+        self.batches.clear();
+        self.particle_layer = None;
+    }
+
+    /// Dibuja los quads acumulados (y las partículas, en su capa) en la escena intermedia.
+    fn record_scene(&self, enc: &mut wgpu::CommandEncoder) {
+        let view = &self.post.scene;
         let mut pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: None,
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -411,14 +495,28 @@ impl Renderer {
             occlusion_query_set: None,
             multiview_mask: None,
         });
-        pass.set_viewport(viewport[0], viewport[1], viewport[2], viewport[3], 0.0, 1.0);
-        pass.set_pipeline(&self.pipeline);
-        pass.set_bind_group(0, &self.bind_group, &[]);
-        pass.set_vertex_buffer(0, self.vbuf.slice(..));
-        pass.set_index_buffer(self.ibuf.slice(..), wgpu::IndexFormat::Uint32);
-        for b in &self.batches {
+        let particles = self
+            .particles
+            .as_ref()
+            .filter(|_| self.effects.particles)
+            .zip(self.particle_layer);
+        let bind_quads = |pass: &mut wgpu::RenderPass| {
+            pass.set_pipeline(&self.pipeline);
+            pass.set_bind_group(0, &self.bind_group, &[]);
+            pass.set_vertex_buffer(0, self.vbuf.slice(..));
+            pass.set_index_buffer(self.ibuf.slice(..), wgpu::IndexFormat::Uint32);
+        };
+        bind_quads(&mut pass);
+        for (i, b) in self.batches.iter().enumerate() {
+            if let Some((p, _)) = particles.filter(|&(_, at)| at == i) {
+                p.draw(&mut pass);
+                bind_quads(&mut pass);
+            }
             pass.set_bind_group(1, &self.textures[b.tex.0].bind_group, &[]);
             pass.draw_indexed(b.first_quad * 6..(b.first_quad + b.quads) * 6, 0, 0..1);
+        }
+        if let Some((p, _)) = particles.filter(|&(_, at)| at >= self.batches.len()) {
+            p.draw(&mut pass);
         }
     }
 
@@ -428,9 +526,9 @@ impl Renderer {
         self.capture = Some(path.into());
     }
 
-    /// Vuelve a dibujar el frame actual en una textura propia y la lee de la GPU.
+    /// Vuelve a componer el frame actual en una textura propia y la lee de la GPU.
     fn save_capture(&self, path: &std::path::Path) -> Result<(), String> {
-        let (w, h) = (VIRTUAL_W as u32, VIRTUAL_H as u32);
+        let (w, h) = self.post.scene_size;
         let tex = self.device.create_texture(&wgpu::TextureDescriptor {
             label: Some("captura"),
             size: wgpu::Extent3d {
@@ -455,7 +553,8 @@ impl Renderer {
         });
         let mut enc = self.device.create_command_encoder(&Default::default());
         let view = tex.create_view(&Default::default());
-        self.record_pass(&mut enc, &view, [0.0, 0.0, VIRTUAL_W, VIRTUAL_H]);
+        self.post
+            .composite(&mut enc, &view, [0.0, 0.0, w as f32, h as f32]);
         enc.copy_texture_to_buffer(
             wgpu::TexelCopyTextureInfo {
                 texture: &tex,
@@ -511,9 +610,24 @@ impl Renderer {
         }
         drop(data);
         buf.unmap();
-        image::RgbaImage::from_raw(w, h, rgba)
-            .ok_or_else(|| "tamaño de imagen inválido".to_string())?
-            .save(path)
-            .map_err(|e| e.to_string())
+        let mut img = image::RgbaImage::from_raw(w, h, rgba)
+            .ok_or_else(|| "tamaño de imagen inválido".to_string())?;
+        // La escena va al tamaño de la ventana; la captura siempre al lienzo virtual.
+        let (vw, vh) = (VIRTUAL_W as u32, VIRTUAL_H as u32);
+        if (w, h) != (vw, vh) {
+            img = image::imageops::resize(&img, vw, vh, image::imageops::FilterType::Triangle);
+        }
+        img.save(path).map_err(|e| e.to_string())
     }
+}
+
+/// Rectángulo 4:3 centrado en una ventana de `w`x`h` (x, y, ancho, alto) y su tamaño en píxeles.
+fn letterbox(w: u32, h: u32) -> ([f32; 4], (u32, u32)) {
+    let (sw, sh) = (w as f32, h as f32);
+    let scale = (sw / VIRTUAL_W).min(sh / VIRTUAL_H);
+    let (vw, vh) = ((VIRTUAL_W * scale).round(), (VIRTUAL_H * scale).round());
+    (
+        [((sw - vw) / 2.0).floor(), ((sh - vh) / 2.0).floor(), vw, vh],
+        (vw.max(1.0) as u32, vh.max(1.0) as u32),
+    )
 }
