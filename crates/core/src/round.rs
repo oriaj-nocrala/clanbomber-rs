@@ -7,11 +7,6 @@ use crate::flight::Flight;
 use crate::map::TILE_PIXELS;
 use crate::sim::{World, TICK_DT};
 
-/// `Config::round_time`: segundos por ronda.
-pub const ROUND_TIME: f32 = 90.0;
-/// `Config::points_to_win`: rondas que hay que ganar para llevarse la partida.
-pub const POINTS_TO_WIN: i32 = 5;
-
 /// El observador (`Observer`): al agotarse el tiempo salta de casilla en casilla a 500 px/s
 /// haciendo desaparecer el suelo.
 #[derive(Clone, Debug)]
@@ -68,10 +63,10 @@ impl World {
     fn begin_round(&mut self, fly_speed: i32) {
         self.assign_spawns();
         for b in &mut self.bombers {
-            b.reset();
+            b.reset(&self.config);
             b.begin_round(fly_speed);
         }
-        self.round_time = ROUND_TIME;
+        self.round_time = self.config.round_time as f32;
         self.observer = Observer::new();
         self.phase = Phase::Playing;
     }
@@ -128,7 +123,7 @@ impl World {
         }
 
         // El reloj no corre hasta que todos han aterrizado; entonces se encienden los controles.
-        if self.round_time == ROUND_TIME {
+        if self.round_time == self.config.round_time as f32 {
             if self.bombers.iter().any(|b| b.flight.active) {
                 return false;
             }
@@ -177,7 +172,10 @@ impl World {
         }
         // analyze_game: el ganador es el último vivo; la partida acaba al llegar a la meta.
         let winner = self.bombers.iter().rposition(|b| !b.dead);
-        let end_of_game = self.bombers.iter().any(|b| b.points == self.points_to_win);
+        let end_of_game = self
+            .bombers
+            .iter()
+            .any(|b| b.points == self.config.points_to_win);
 
         // `load_next_valid`: el mapa siguiente se carga ya (el marcador enseña cuál viene).
         let next = match &mut self.playlist {

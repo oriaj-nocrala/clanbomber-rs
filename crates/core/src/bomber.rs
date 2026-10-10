@@ -4,6 +4,7 @@
 //! Las posiciones son píxeles dentro del mapa (0..680 x 0..520), como `x`/`y` del
 //! original: `f32` internamente, enteros truncados (`get_x`) en las comprobaciones.
 
+use crate::config::Config;
 use crate::disease::{Disease, DiseaseKind};
 use crate::extra::ExtraKind;
 use crate::flight::Flight;
@@ -69,11 +70,6 @@ pub struct Bomber {
 
 const T: i32 = TILE_PIXELS as i32;
 
-// Config::max_* del original.
-const MAX_SKATEBOARDS: i32 = 5;
-const MAX_POWER: i32 = 12;
-const MAX_BOMBS: i32 = 9;
-
 impl Bomber {
     /// `orig_x`/`orig_y` en píxeles. Mira hacia la izquierda si nace a la derecha de x=300.
     pub fn new(orig_x: i32, orig_y: i32) -> Self {
@@ -113,7 +109,7 @@ impl Bomber {
     }
 
     /// `Bomber::reset()`: estado de inicio de ronda (conserva puntos, muertes y asesinatos).
-    pub fn reset(&mut self) {
+    pub fn reset(&mut self, cfg: &Config) {
         // `disease->stop()` revierte el efecto antes de descartarla.
         if let Some(d) = self.disease.take() {
             self.stop_disease(d.kind);
@@ -135,13 +131,13 @@ impl Bomber {
         self.extra_gloves = 0;
         self.drops.clear();
         // Config::start_* del original.
-        self.skateboards = 0;
-        self.speed = 90;
-        self.can_kick = false;
-        self.cur_bombs = 1;
-        self.bombs = 1;
-        self.power = 1;
-        self.gloves = 0;
+        self.skateboards = cfg.start_skateboards;
+        self.speed = 90 + cfg.start_skateboards * 40;
+        self.can_kick = cfg.start_kick;
+        self.cur_bombs = cfg.start_bombs;
+        self.bombs = cfg.start_bombs;
+        self.power = cfg.start_power;
+        self.gloves = cfg.start_glove as i32;
         (self.x, self.y) = (self.orig.0 as f32, self.orig.1 as f32);
         self.anim_count = 0.0;
     }
@@ -256,23 +252,23 @@ impl Bomber {
     }
 
     /// `Bomber::gain_extra_*`; los máximos son los de `Config::max_*` del original.
-    pub fn gain_extra_bomb(&mut self) {
-        if MAX_BOMBS > self.bombs {
+    pub fn gain_extra_bomb(&mut self, cfg: &Config) {
+        if cfg.max_bombs > self.bombs {
             self.bombs += 1;
             self.extra_bombs += 1;
             self.cur_bombs += 1;
         }
     }
 
-    pub fn gain_extra_power(&mut self) {
-        if MAX_POWER > self.power {
+    pub fn gain_extra_power(&mut self, cfg: &Config) {
+        if cfg.max_power > self.power {
             self.power += 1;
             self.extra_power += 1;
         }
     }
 
-    pub fn gain_extra_skateboard(&mut self) {
-        if MAX_SKATEBOARDS > self.skateboards {
+    pub fn gain_extra_skateboard(&mut self, cfg: &Config) {
+        if cfg.max_skateboards > self.skateboards {
             self.skateboards += 1;
             self.extra_skateboards += 1;
             self.speed += 40;

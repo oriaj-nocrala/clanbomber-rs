@@ -1,19 +1,18 @@
 //! Bombas y explosiones (ClanBomber2: Bomb.cpp, Explosion.cpp).
 
+use crate::config::Config;
 use crate::extra::Extra;
 use crate::flight::Flight;
 use crate::map::{Dir, Map, TILE_PIXELS};
 
 const T: i32 = TILE_PIXELS as i32;
 
-/// `Config::bomb_countdown / 10` segundos.
+/// Valores por defecto de `Config`: `bomb_countdown / 10` segundos de mecha.
 pub const BOMB_COUNTDOWN: f32 = 2.5;
-/// `Config::bomb_delay / 100`: retardo máximo de una bomba alcanzada por otra explosión.
-pub const BOMB_DELAY: f32 = 0.1;
 /// `Explosion::detonation_period`.
 pub const EXPLOSION_PERIOD: f32 = 0.5;
 
-/// `Config::bomb_speed`: píxeles por segundo al patearla y base de la velocidad de vuelo.
+/// Valor por defecto de `Config::bomb_speed`.
 pub const BOMB_SPEED: i32 = 160;
 
 #[derive(Clone, Debug)]
@@ -44,18 +43,24 @@ pub struct Bomb {
 }
 
 impl Bomb {
+    /// Bomba con los valores por defecto de `Config`.
     pub fn new(tx: i32, ty: i32, power: i32, owner: usize) -> Self {
+        Self::with_config(tx, ty, power, owner, &Config::default())
+    }
+
+    /// `Bomb::Bomb`: mecha y velocidad salen de la configuración.
+    pub fn with_config(tx: i32, ty: i32, power: i32, owner: usize, cfg: &Config) -> Self {
         Bomb {
             x: (tx * T) as f32,
             y: (ty * T) as f32,
             power,
             owner,
-            countdown: BOMB_COUNTDOWN,
+            countdown: cfg.bomb_countdown as f32 / 10.0,
             cur_scale: 0.0,
             exploding: false,
             delete_me: false,
             cur_dir: None,
-            speed: BOMB_SPEED,
+            speed: cfg.bomb_speed,
             remainder: 0.0,
             flight: Flight::default(),
             fly_over_walls: false,
@@ -88,11 +93,11 @@ impl Bomb {
         (self.cur_scale as i32 % 4) as u32
     }
 
-    /// `Bomb::explode_delayed()`: acorta la mecha, pero nunca la alarga.
-    /// Devuelve `true` si debe explotar ya.
-    pub fn explode_delayed(&mut self) -> bool {
-        if self.countdown > BOMB_DELAY {
-            self.countdown = BOMB_DELAY;
+    /// `Bomb::explode_delayed()`: acorta la mecha a `delay` segundos, pero nunca la alarga
+    /// (`Config::bomb_delay / 100`). Devuelve `true` si debe explotar ya.
+    pub fn explode_delayed(&mut self, delay: f32) -> bool {
+        if self.countdown > delay {
+            self.countdown = delay;
             return self.countdown == 0.0;
         }
         false

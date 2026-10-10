@@ -1,10 +1,11 @@
 use crate::bomb::{Bomb, Explosion, Object};
 use crate::bomber::{Action, Bomber, Input};
-use crate::extra::{roll_extra, Extra, ExtraConfig, ExtraKind};
+use crate::config::Config;
+use crate::extra::{roll_extra, Extra, ExtraKind};
 use crate::map::{Dir, Map, MapList, Tile, MAP_HEIGHT, MAP_WIDTH};
 use crate::movement::{advance, Env, Mover, Pos};
 use crate::rng::Rng;
-use crate::round::{Observer, Phase, POINTS_TO_WIN, ROUND_TIME};
+use crate::round::{Observer, Phase};
 
 /// Frecuencia fija de la simulación. El render interpola entre ticks.
 pub const TICK_HZ: u32 = 60;
@@ -19,7 +20,7 @@ pub struct World {
     pub objects: Vec<Object>,
     pub tick: u64,
     pub rng: Rng,
-    pub extra_config: ExtraConfig,
+    pub config: Config,
     /// Estado de cada casilla de flecha (`MapTile_Arrow::old_bomb`, `chill_countdown`).
     pub(crate) arrows: Vec<ArrowState>,
     /// Bombas retenidas por una trampa, fuera de `objects` (`MapTile_Trap::bombs`).
@@ -29,7 +30,6 @@ pub struct World {
     pub round_time: f32,
     pub observer: Observer,
     pub phase: Phase,
-    pub points_to_win: i32,
     /// Mapas disponibles para las rondas siguientes (si no hay, se repite el inicial).
     pub playlist: Option<MapList>,
     pub(crate) pristine: Map,
@@ -105,6 +105,11 @@ impl World {
 
     /// La semilla fija todo lo aleatorio (extras que sueltan las cajas).
     pub fn with_seed(map: Map, seed: u64) -> Self {
+        Self::with_config(map, seed, Config::default())
+    }
+
+    /// Mundo con las opciones de partida dadas (`Config`).
+    pub fn with_config(map: Map, seed: u64, config: Config) -> Self {
         let pristine = map.clone();
         let mut map = map;
         let mut rng = Rng::new(seed);
@@ -113,10 +118,9 @@ impl World {
             arrows: Self::arrows_for(&map),
             trapped: Vec::new(),
             rounds_enabled: false,
-            round_time: ROUND_TIME,
+            round_time: config.round_time as f32,
             observer: Observer::new(),
             phase: Phase::Playing,
-            points_to_win: POINTS_TO_WIN,
             playlist: None,
             pristine,
             next_map: None,
@@ -125,7 +129,7 @@ impl World {
             objects: Vec::new(),
             tick: 0,
             rng,
-            extra_config: ExtraConfig::default(),
+            config,
         }
     }
 
@@ -560,13 +564,19 @@ impl World {
         }
         let power = self.bombers[owner].power;
         self.bombers[owner].cur_bombs -= 1;
-        self.objects
-            .push(Object::Bomb(Bomb::new(tx, ty, power, owner)));
+        self.objects.push(Object::Bomb(Bomb::with_config(
+            tx,
+            ty,
+            power,
+            owner,
+            &self.config,
+        )));
     }
 
     /// `MapTile::spawn_extra()`.
     fn spawn_extra(&mut self, x: i32, y: i32) {
-        if let Some(kind) = roll_extra(&mut self.rng, &self.extra_config) {
+        let cfg = self.config.extra_config();
+        if let Some(kind) = roll_extra(&mut self.rng, &cfg) {
             self.objects.push(Object::Extra(Extra::new(x, y, kind)));
         }
     }
@@ -599,6 +609,7 @@ impl World {
         }
         let (tile, kind) = (e.tile(), e.kind);
         let mut taken = false;
+        let cfg = &self.config;
         for b in self
             .bombers
             .iter_mut()
@@ -607,9 +618,9 @@ impl World {
             // Todo extra cura primero la enfermedad que hubiera (y suelta su extra).
             b.loose_disease();
             match kind {
-                ExtraKind::Bomb => b.gain_extra_bomb(),
-                ExtraKind::Power => b.gain_extra_power(),
-                ExtraKind::Skateboard => b.gain_extra_skateboard(),
+                ExtraKind::Bomb => b.gain_extra_bomb(cfg),
+                ExtraKind::Power => b.gain_extra_power(cfg),
+                ExtraKind::Skateboard => b.gain_extra_skateboard(cfg),
                 ExtraKind::Kick => b.gain_extra_kick(),
                 ExtraKind::Glove => b.gain_extra_glove(),
                 ExtraKind::Joint | ExtraKind::Viagra | ExtraKind::Koks => {
@@ -765,7 +776,7 @@ impl World {
             let Object::Bomb(b) = &mut self.objects[j] else {
                 continue;
             };
-            if b.explode_delayed() {
+            if b.explode_delayed(self.config.bomb_delay as f32 / 100.0) {
                 self.explode(j);
             }
         }
@@ -1214,8 +1225,8 @@ mod tests {
     #[test]
     fn dying_drops_the_extras_you_had_gained() {
         let mut w = world_with(&[]);
-        w.bombers[0].gain_extra_bomb();
-        w.bombers[0].gain_extra_power();
+        w.bombers[0].gain_extra_bomb(&Config::default());
+        w.bombers[0].gain_extra_power(&Config::default());
         w.bombers[0].gain_extra_kick();
         let mut b = Bomb::new(5, 5, 1, 1);
         b.countdown = 0.01;
@@ -1386,11 +1397,11 @@ mod tests {
         }
         assert_eq!(
             w.time_left(),
-            crate::ROUND_TIME,
+            w.config.round_time as f32,
             "el reloj no corre mientras vuelan"
         );
         land(&mut w);
-        assert!(w.time_left() < crate::ROUND_TIME);
+        assert!(w.time_left() < w.config.round_time as f32);
         for (b, expected) in w.bombers.iter().zip(w.bombers.iter().map(|b| b.orig)) {
             assert_eq!((b.get_x(), b.get_y()), expected);
         }
@@ -1485,7 +1496,7 @@ mod tests {
         w.confirm();
         assert_eq!(w.phase, Phase::Playing);
         assert!(w.objects.is_empty());
-        assert_eq!(w.time_left(), crate::ROUND_TIME);
+        assert_eq!(w.time_left(), w.config.round_time as f32);
         assert!(w.bombers.iter().all(|b| !b.dead && b.flight.active));
         assert_eq!(w.bombers[0].points, 1, "los puntos se conservan");
         assert_eq!(w.bombers[0].cur_bombs, 1);
@@ -1495,7 +1506,7 @@ mod tests {
     fn reaching_the_points_goal_ends_the_match_and_resets_points() {
         let mut w = match_world();
         land(&mut w);
-        w.bombers[0].points = crate::POINTS_TO_WIN - 1;
+        w.bombers[0].points = w.config.points_to_win - 1;
         w.bombers[1].die();
         w.step(&[]);
         assert_eq!(
@@ -1513,11 +1524,11 @@ mod tests {
     fn reset_clears_extras_and_diseases_but_keeps_the_score() {
         let mut w = match_world();
         land(&mut w);
-        w.bombers[0].gain_extra_skateboard();
-        w.bombers[0].gain_extra_power();
+        w.bombers[0].gain_extra_skateboard(&Config::default());
+        w.bombers[0].gain_extra_power(&Config::default());
         w.bombers[0].infect(DiseaseKind::Fast);
         w.bombers[0].points = 3;
-        w.bombers[0].reset();
+        w.bombers[0].reset(&Config::default());
         let b = &w.bombers[0];
         assert_eq!((b.speed, b.power, b.bombs, b.points), (90, 1, 1, 3));
         assert!(!b.is_diseased());
@@ -1585,6 +1596,64 @@ mod tests {
         for _ in 0..5 {
             let m = list.next_for(8).unwrap();
             assert!(m.max_players >= 8, "{}", m.name);
+        }
+    }
+
+    // ---- Opciones de partida ----
+
+    #[test]
+    fn config_sets_the_bomb_fuse_and_the_chain_delay() {
+        let mut cfg = Config::default();
+        cfg.bomb_countdown = 10; // 1 s
+        let mut w = World::with_config(arena(), 1, cfg);
+        w.bombers = vec![Bomber::new(5 * 40, 5 * 40), Bomber::new(10 * 40, 5 * 40)];
+        w.bombers[1] = Bomber::new(1 * 40, 1 * 40);
+        w.step(&[BOMB]);
+        assert!((w.bombs().next().unwrap().countdown - 1.0).abs() < 0.05);
+        for _ in 0..70 {
+            w.step(&[]);
+        }
+        assert!(w.explosions().count() > 0 || w.bombs().count() == 0);
+    }
+
+    #[test]
+    fn config_sets_start_values_and_limits() {
+        let mut cfg = Config::default();
+        cfg.start_skateboards = 2;
+        cfg.start_power = 3;
+        cfg.start_kick = true;
+        cfg.start_glove = true;
+        cfg.max_power = 4;
+        cfg.round_time = 20;
+        let mut w = World::with_config(arena(), 2, cfg);
+        w.start_match(2);
+        let b = &w.bombers[0];
+        assert_eq!((b.speed, b.power, b.can_kick, b.gloves), (170, 3, true, 1));
+        assert_eq!(w.time_left(), 20.0);
+        w.bombers[0].gain_extra_power(&w.config);
+        w.bombers[0].gain_extra_power(&w.config);
+        assert_eq!(w.bombers[0].power, 4, "no pasa del máximo");
+    }
+
+    #[test]
+    fn config_can_disable_extras_and_start_extras_do_not_drop() {
+        let mut cfg = Config::default();
+        cfg.power = false;
+        cfg.bombs = false;
+        cfg.skateboards = false;
+        cfg.kick = false;
+        cfg.glove = false;
+        cfg.joint = false;
+        cfg.viagra = false;
+        cfg.koks = false;
+        let w = World::with_config(arena(), 3, cfg);
+        assert!(w.config.extra_config().power == false);
+        let mut rng = crate::Rng::new(1);
+        for _ in 0..1000 {
+            assert_eq!(
+                crate::extra::roll_extra(&mut rng, &w.config.extra_config()),
+                None
+            );
         }
     }
 }
