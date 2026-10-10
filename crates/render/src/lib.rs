@@ -1,9 +1,13 @@
 //! Renderer 2D sobre wgpu: batcher de quads en resolución virtual 800x600
 //! con letterboxing. Las texturas y las partículas por compute se añaden aquí.
 
+mod text;
+
 use std::sync::Arc;
 use wgpu::util::DeviceExt;
 use winit::window::Window;
+
+pub use text::{Align, Font, FontError};
 
 pub const VIRTUAL_W: f32 = 800.0;
 pub const VIRTUAL_H: f32 = 600.0;
