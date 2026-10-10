@@ -52,6 +52,7 @@ pub enum Id {
     Bloom,
     Particles,
     Crt,
+    FireShader,
     MapEditor,
     Credits,
     Help,
@@ -314,6 +315,12 @@ impl Menu {
         m.add(gr, Id::Bloom, "Glow (Bloom)", value(Id::Bloom, 0, 1));
         m.add(gr, Id::Particles, "Particles", value(Id::Particles, 0, 1));
         m.add(gr, Id::Crt, "CRT Filter", value(Id::Crt, 0, 1));
+        m.add(
+            gr,
+            Id::FireShader,
+            "Shader Explosions",
+            value(Id::FireShader, 0, 1),
+        );
 
         m.add(
             o,

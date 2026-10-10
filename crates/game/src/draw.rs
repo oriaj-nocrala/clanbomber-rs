@@ -1,8 +1,9 @@
 //! Dibujo de la partida: mapa, objetos, observador, reloj y marcador.
 //! Todo en el lienzo virtual de 800x600, con las coordenadas y el orden del original.
 
+use cb_core::bomb::EXPLOSION_PERIOD;
 use cb_core::{Dir, Map, Object, Phase, Tile, World, MAP_HEIGHT, MAP_WIDTH, TICK_HZ, TILE_PIXELS};
-use cb_render::{Align, Renderer, Sheet};
+use cb_render::{Align, Fire, Renderer, Sheet};
 
 use crate::assets::Assets;
 
@@ -293,7 +294,20 @@ fn draw_game(r: &mut Renderer, a: &Assets, w: &World, players: &[Player]) {
     for e in w.extras().filter(|e| !e.falling && !e.flight.active) {
         r.sheet_sprite(&a.extras, e.kind as u32, ox + e.x, oy + e.y);
     }
-    for e in w.explosions() {
+    let fire_shader = r.effects().fire;
+    for e in w.explosions().filter(|_| fire_shader) {
+        // Explosión procedural: el grosor sale de la potencia de la bomba.
+        let (cx, cy) = at(e.tx, e.ty);
+        r.fire(&Fire {
+            center: [cx + t / 2.0, cy + t / 2.0],
+            arms: [e.left, e.right, e.up, e.down],
+            tile: t,
+            power: e.power as f32,
+            progress: 1.0 - e.period / EXPLOSION_PERIOD,
+            seed: (e.tx * 31 + e.ty * 17) as u32 ^ (e.owner as u32) << 8,
+        });
+    }
+    for e in w.explosions().filter(|_| !fire_shader) {
         // Índices de segmento: Explosion.h (EXPLODE_LEFT..EXPLODE_X); +anim (0, 7 o 14).
         let (left, h, right, up, v, down, center) = (0, 1, 2, 3, 4, 5, 6);
         let an = e.anim();

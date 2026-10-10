@@ -12,6 +12,7 @@ pub struct Video {
     pub bloom: bool,
     pub particles: bool,
     pub crt: bool,
+    pub fire: bool,
 }
 
 impl Default for Video {
@@ -21,6 +22,7 @@ impl Default for Video {
             bloom: e.bloom,
             particles: e.particles,
             crt: e.crt,
+            fire: e.fire,
         }
     }
 }
@@ -48,6 +50,7 @@ impl Video {
                 "bloom" => v.bloom = n != 0,
                 "particles" => v.particles = n != 0,
                 "crt" => v.crt = n != 0,
+                "fire" => v.fire = n != 0,
                 _ => {}
             }
         }
@@ -62,10 +65,11 @@ impl Video {
         std::fs::write(
             path,
             format!(
-                "bloom={}\nparticles={}\ncrt={}\n",
+                "bloom={}\nparticles={}\ncrt={}\nfire={}\n",
                 b(self.bloom),
                 b(self.particles),
-                b(self.crt)
+                b(self.crt),
+                b(self.fire)
             ),
         )
     }
@@ -75,6 +79,7 @@ impl Video {
             bloom: self.bloom,
             crt: self.crt,
             particles: self.particles,
+            fire: self.fire,
         }
     }
 
@@ -84,6 +89,7 @@ impl Video {
             Id::Bloom => self.bloom as i32,
             Id::Particles => self.particles as i32,
             Id::Crt => self.crt as i32,
+            Id::FireShader => self.fire as i32,
             _ => return None,
         })
     }
@@ -94,6 +100,7 @@ impl Video {
             Id::Bloom => self.bloom = v != 0,
             Id::Particles => self.particles = v != 0,
             Id::Crt => self.crt = v != 0,
+            Id::FireShader => self.fire = v != 0,
             _ => return false,
         }
         true
@@ -112,6 +119,7 @@ mod tests {
             bloom: false,
             particles: true,
             crt: true,
+            fire: false,
         };
         v.save(&path).unwrap();
         assert_eq!(Video::load(&path), v);
