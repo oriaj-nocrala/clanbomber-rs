@@ -13,7 +13,6 @@ pub const NR_SKINS: u8 = 8;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ControllerKind {
     Ai,
-    AiMass,
     /// Teclado 1 (flechas + Enter), 2 (WASD + Tab) o 3 (IJKL + Espacio).
     Keymap(u8),
     RcMouse,
@@ -24,7 +23,6 @@ impl ControllerKind {
     fn to_str(self) -> String {
         match self {
             ControllerKind::Ai => "ai".into(),
-            ControllerKind::AiMass => "ai_mass".into(),
             ControllerKind::Keymap(n) => format!("keymap{n}"),
             ControllerKind::RcMouse => "rcmouse".into(),
             ControllerKind::Joystick(n) => format!("joystick{n}"),
@@ -34,7 +32,9 @@ impl ControllerKind {
     fn from_str(s: &str) -> Option<Self> {
         Some(match s {
             "ai" => ControllerKind::Ai,
-            "ai_mass" => ControllerKind::AiMass,
+            // La segunda IA del original ("AI_mass") no se portó: las configuraciones que la
+            // nombran pasan a la IA que tenemos.
+            "ai_mass" => ControllerKind::Ai,
             "rcmouse" => ControllerKind::RcMouse,
             _ => {
                 if let Some(n) = s.strip_prefix("keymap") {
@@ -447,5 +447,11 @@ mod tests {
         assert_eq!(Config::load(&path).points_to_win, 7);
         assert_eq!(Config::load(dir.join("missing")).points_to_win, 5);
         let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn old_configs_naming_the_dropped_second_ai_fall_back_to_the_normal_one() {
+        let c = Config::from_text("bomber3.controller=ai_mass");
+        assert_eq!(c.bombers[3].controller, ControllerKind::Ai);
     }
 }

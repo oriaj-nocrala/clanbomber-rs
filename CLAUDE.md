@@ -77,7 +77,7 @@ enum (`CurrentSurfaceTexture`), `VertexState.buffers` es `&[Option<_>]`, `bind_g
 1. ~~Mapa con texturas~~ 2. ~~Bomber~~ 3. ~~Bombas y explosiones~~
 4. ~~Extras, enfermedades, hielo/flechas/trampas, ciclo de partida (rondas, reloj, marcador)~~
 5. ~~Menús completos~~ (intro, principal, opciones, Player Setup, Map Selection, Map Editor, Credits, Help)
-   → IA hecha (`ai.rs`, port de Controller_AI; AI_mass usa la misma). Sonido hecho (efectos con rodio y
+   → IA hecha (`ai.rs`, port de Controller_AI; la segunda IA del original, AI_mass, no se portó a propósito). Sonido hecho (efectos con rodio y
    música `.mod` con libopenmpt; F2 la activa, P pausa), cadáveres, trozos, sangre en los créditos y
    temblor de explosiones. Equipos hechos (rondas por equipo, marcador de equipos, la IA no vuela a compañeros). Mandos hechos (gilrs: stick o cruceta + botón A).
    Pendiente: el controlador de ratón (RCMOUSE; queda quieto).

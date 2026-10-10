@@ -183,9 +183,9 @@ impl App {
         world.start_match(players.len());
         let teams: Vec<u8> = players.iter().map(|p| p.team).collect();
         world.set_teams(&teams);
-        // IA (`Controller_AI`); `AI_mass` comparte de momento la misma.
+        // IA (`Controller_AI`).
         for (i, p) in players.iter().enumerate() {
-            if matches!(p.controller, ControllerKind::Ai | ControllerKind::AiMass) {
+            if matches!(p.controller, ControllerKind::Ai) {
                 world.set_ai(i, true);
             }
         }

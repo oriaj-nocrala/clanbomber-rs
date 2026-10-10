@@ -14,9 +14,8 @@ const COLS: usize = 4;
 /// Límites de las columnas en píxeles (`cg` del original).
 const COL_EDGES: [f32; 5] = [17.0, 95.0, 340.0, 500.0, 720.0];
 /// Controladores que se recorren con Enter (sin joysticks detectados: `6 + count`).
-const CONTROLLERS: [ControllerKind; 6] = [
+const CONTROLLERS: [ControllerKind; 5] = [
     ControllerKind::Ai,
-    ControllerKind::AiMass,
     ControllerKind::Keymap(1),
     ControllerKind::Keymap(2),
     ControllerKind::Keymap(3),
@@ -93,7 +92,7 @@ impl PlayerSetup {
                     1 => self.edit = Some(TextEdit::new(&b.name)),
                     2 => b.team = (b.team + 1) % 5,
                     _ => {
-                        // `controller % (6 + joysticks)`: los seis fijos y luego cada mando.
+                        // `controller % (5 + joysticks)`: los cinco fijos y luego cada mando.
                         let all: Vec<ControllerKind> = CONTROLLERS
                             .iter()
                             .copied()
@@ -193,17 +192,6 @@ impl PlayerSetup {
                     r.text(
                         &a.font_small,
                         "DOK",
-                        650.0,
-                        102.0 + i as f32 * 63.0,
-                        col,
-                        Align::Right,
-                    );
-                }
-                ControllerKind::AiMass => {
-                    r.sheet_sprite(&a.ps_controls, 0, 550.0, y + 2.0);
-                    r.text(
-                        &a.font_small,
-                        "MASS",
                         650.0,
                         102.0 + i as f32 * 63.0,
                         col,
