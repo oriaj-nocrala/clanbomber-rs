@@ -1,6 +1,7 @@
 //! Lógica de ClanBomber sin dependencias gráficas.
 //! Determinista y de paso fijo, pensada para testearse contra el original.
 
+pub mod ai;
 pub mod bomb;
 pub mod bomber;
 pub mod config;
@@ -14,6 +15,7 @@ pub mod rng;
 pub mod round;
 pub mod sim;
 
+pub use ai::Ai;
 pub use bomb::{Bomb, Explosion, Object};
 pub use bomber::{Bomber, Input};
 pub use config::{BomberConfig, Config, ControllerKind, MAX_PLAYERS, NR_SKINS};

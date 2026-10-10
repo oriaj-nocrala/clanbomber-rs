@@ -1,3 +1,4 @@
+use crate::ai::{Ai, AiView};
 use crate::bomb::{Bomb, Explosion, Object};
 use crate::bomber::{Action, Bomber, Input};
 use crate::config::Config;
@@ -25,6 +26,8 @@ pub struct World {
     pub(crate) arrows: Vec<ArrowState>,
     /// Bombas retenidas por una trampa, fuera de `objects` (`MapTile_Trap::bombs`).
     pub(crate) trapped: Vec<Trapped>,
+    /// IA de cada bomber (`None`: lo controla una persona).
+    pub ais: Vec<Option<Ai>>,
     /// Reglas de partida (reloj, ganador, rondas); las pruebas sueltas las dejan apagadas.
     pub(crate) rounds_enabled: bool,
     pub round_time: f32,
@@ -117,6 +120,7 @@ impl World {
         World {
             arrows: Self::arrows_for(&map),
             trapped: Vec::new(),
+            ais: Vec::new(),
             rounds_enabled: false,
             round_time: config.round_time as f32,
             observer: Observer::new(),
@@ -131,6 +135,14 @@ impl World {
             rng,
             config,
         }
+    }
+
+    /// Pone (o quita) la IA de un bomber.
+    pub fn set_ai(&mut self, bomber: usize, on: bool) {
+        if self.ais.len() < self.bombers.len() {
+            self.ais.resize_with(self.bombers.len(), || None);
+        }
+        self.ais[bomber] = on.then(Ai::new);
     }
 
     /// Estado de las casillas de flecha de un mapa.
@@ -225,7 +237,22 @@ impl World {
 
         for i in 0..self.bombers.len() {
             self.infect_others(i);
-            let input = inputs.get(i).copied().unwrap_or_default();
+            let mut input = inputs.get(i).copied().unwrap_or_default();
+            // `controller->update()`: un bomber con IA decide sus teclas con el mundo tal como está.
+            if let Some(Some(mut ai)) = self.ais.get_mut(i).map(Option::take) {
+                if !self.bombers[i].dead {
+                    let mut view = AiView {
+                        map: &self.map,
+                        objects: &self.objects,
+                        bombers: &self.bombers,
+                        me: i,
+                        rng: &mut self.rng,
+                        config: &self.config,
+                    };
+                    input = ai.update(&mut view);
+                }
+                self.ais[i] = Some(ai);
+            }
             // Se actúa sobre una copia para poder consultar al resto del mundo.
             let mut me = self.bombers[i].clone();
             let action = {
@@ -1688,5 +1715,124 @@ mod tests {
         for _ in 0..30 {
             assert_ne!(list.random_for(2, &mut rng).unwrap().name, second_name);
         }
+    }
+
+    // ---- IA ----
+
+    fn ai_world(cells: &[(usize, usize, char)]) -> World {
+        let mut w = world_with(cells);
+        w.bombers = vec![Bomber::new(5 * 40, 5 * 40), Bomber::new(15 * 40, 11 * 40)];
+        w.ais = vec![Some(Ai::new()), None];
+        w
+    }
+
+    #[test]
+    fn ai_runs_away_from_a_bomb_about_to_explode() {
+        let mut w = ai_world(&[]);
+        let mut b = Bomb::new(5, 5, 3, 1);
+        b.countdown = 1.2;
+        w.objects.push(Object::Bomb(b));
+        for _ in 0..(3.0 * 60.0) as usize {
+            w.step(&[]);
+        }
+        assert!(!w.bombers[0].dead, "se apartó a tiempo");
+        let (tx, ty) = w.bombers[0].tile();
+        assert!(tx != 5 && ty != 5 || (tx - 5).abs() > 3 || (ty - 5).abs() > 3);
+    }
+
+    #[test]
+    fn ai_goes_for_a_nearby_extra() {
+        let mut w = ai_world(&[]);
+        put_extra(&mut w, ExtraKind::Power, 8, 5);
+        for _ in 0..(3.0 * 60.0) as usize {
+            w.step(&[]);
+            if w.bombers[0].power > 1 {
+                break;
+            }
+        }
+        assert_eq!(w.bombers[0].power, 2, "recogió el extra");
+    }
+
+    #[test]
+    fn ai_avoids_disease_extras() {
+        let mut w = ai_world(&[]);
+        put_extra(&mut w, ExtraKind::Koks, 7, 5);
+        for _ in 0..(3.0 * 60.0) as usize {
+            w.step(&[]);
+        }
+        assert!(!w.bombers[0].is_diseased(), "no pisa las enfermedades");
+    }
+
+    #[test]
+    fn ai_blows_up_boxes_and_survives() {
+        // Un patio de cajas alrededor de la IA. (Si no hubiera salida, no pondría ninguna bomba.)
+        let mut cells = Vec::new();
+        for x in 3..=8 {
+            for y in 3..=8 {
+                // La IA está en (5,5) y tiene un pasillo libre hacia el norte para escapar.
+                if !matches!((x, y), (5, 5) | (5, 4) | (5, 3)) {
+                    cells.push((x, y, '+'));
+                }
+            }
+        }
+        let mut w = ai_world(&cells);
+        let boxes = |w: &World| {
+            (0..17)
+                .flat_map(|x| (0..13).map(move |y| (x, y)))
+                .filter(|&(x, y)| w.map.get(x, y) == crate::Tile::Box)
+                .count()
+        };
+        let before = boxes(&w);
+        for _ in 0..(40.0 * 60.0) as usize {
+            w.step(&[]);
+            assert!(!w.bombers[0].dead, "la IA no se suicida (tick {})", w.tick);
+        }
+        assert!(
+            boxes(&w) < before,
+            "abrió camino con bombas: {} -> {}",
+            before,
+            boxes(&w)
+        );
+    }
+
+    #[test]
+    fn ai_does_not_put_bombs_with_no_way_out() {
+        // Pasillo cerrado de una casilla: una bomba sería una trampa mortal.
+        let mut cells = Vec::new();
+        for x in 0..17 {
+            for y in 0..13 {
+                if !(x == 5 && y == 5) && !(x == 5 && y == 6) && !(x == 6 && y == 5) {
+                    cells.push((x, y, '*'));
+                }
+            }
+        }
+        let mut w = ai_world(&cells);
+        for _ in 0..(10.0 * 60.0) as usize {
+            w.step(&[]);
+            assert!(!w.bombers[0].dead);
+        }
+    }
+
+    #[test]
+    fn two_ais_play_whole_rounds_without_crashing() {
+        let mut w = World::with_seed(arena(), 77);
+        w.start_match(2);
+        w.set_ai(0, true);
+        w.set_ai(1, true);
+        let mut finished_rounds = 0;
+        for _ in 0..(600.0 * 60.0) as usize {
+            w.step(&[]);
+            if matches!(w.phase, Phase::Scores { .. }) {
+                finished_rounds += 1;
+                w.confirm();
+            }
+            if finished_rounds >= 3 {
+                break;
+            }
+        }
+        assert!(
+            finished_rounds >= 3,
+            "las rondas terminan solas: {finished_rounds}"
+        );
     }
 }

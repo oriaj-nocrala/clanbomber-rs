@@ -56,6 +56,7 @@ impl World {
     pub fn start_match(&mut self, n: usize) {
         self.rounds_enabled = true;
         self.bombers = (0..n).map(|_| Bomber::new(0, 0)).collect();
+        self.ais = (0..n).map(|_| None).collect();
         self.begin_round(300);
     }
 
@@ -65,6 +66,9 @@ impl World {
         for b in &mut self.bombers {
             b.reset(&self.config);
             b.begin_round(fly_speed);
+        }
+        for ai in self.ais.iter_mut().flatten() {
+            ai.reset();
         }
         self.round_time = self.config.round_time as f32;
         self.observer = Observer::new();

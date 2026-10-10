@@ -47,6 +47,8 @@ pub struct Bomber {
     pub orig: (i32, i32),
     /// Vuelo de entrada desde el centro del mapa al inicio de cada ronda.
     pub flight: Flight,
+    /// `stopped`: chocó este tick (la IA abandona su plan).
+    pub stopped: bool,
     pub can_kick: bool,
     pub gloves: i32,
     pub skateboards: i32,
@@ -89,6 +91,7 @@ impl Bomber {
             points: 0,
             orig: (orig_x, orig_y),
             flight: Flight::default(),
+            stopped: false,
             can_kick: false,
             gloves: 0,
             skateboards: 0,
@@ -154,6 +157,11 @@ impl Bomber {
     /// `Observer::act` los enciende cuando todos han aterrizado.
     pub fn activate(&mut self) {
         self.active = true;
+    }
+
+    /// ¿Responde al control? (apagado durante la entrada de ronda o congelado)
+    pub fn active(&self) -> bool {
+        self.active
     }
 
     /// ¿Cuenta como presente en su casilla? Vivo y no en vuelo (`maptilize_objects`).
@@ -347,6 +355,7 @@ impl Bomber {
         if self.dead {
             return action;
         }
+        self.stopped = false;
         // GameObject::act: en vuelo (entrada de ronda) avanza el vuelo sin chocar con nada.
         if self.flight.active {
             let mut pos = (self.x, self.y);
@@ -400,7 +409,11 @@ impl Bomber {
                     y: &mut self.y,
                     remainder: &mut self.remainder,
                 };
-                action.kick = advance(&mut pos, self.speed, dt, d, &mover, env).kick;
+                let adv = advance(&mut pos, self.speed, dt, d, &mover, env);
+                action.kick = adv.kick;
+                if !adv.moved {
+                    self.stopped = true;
+                }
             }
             None => self.anim_count = 0.0,
         }
