@@ -1,12 +1,13 @@
 mod assets;
 mod draw;
+mod menu;
 
 use std::collections::HashSet;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Instant;
 
-use cb_core::{Input, Map, MapList, Phase, World, TICK_HZ};
+use cb_core::{Config, ControllerKind, Input, Map, MapList, Phase, Rng, World, TICK_HZ};
 use cb_render::Renderer;
 use winit::application::ApplicationHandler;
 use winit::dpi::LogicalSize;
@@ -16,10 +17,12 @@ use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::window::{Window, WindowId};
 
 use assets::Assets;
-use draw::Ui;
+use draw::{Player, Ui};
+use menu::{Id, Menu, Outcome};
 
-/// Teclas de los dos primeros keymaps del original: flechas + Enter, y WASD + Tab.
-const KEYMAPS: [[KeyCode; 5]; 2] = [
+/// Los tres teclados del original (izquierda, derecha, arriba, abajo, bomba):
+/// flechas + Enter, WASD + Tab, e IJKL + Espacio.
+const KEYMAPS: [[KeyCode; 5]; 3] = [
     [
         KeyCode::ArrowLeft,
         KeyCode::ArrowRight,
@@ -34,55 +37,178 @@ const KEYMAPS: [[KeyCode; 5]; 2] = [
         KeyCode::KeyS,
         KeyCode::Tab,
     ],
+    [
+        KeyCode::KeyJ,
+        KeyCode::KeyL,
+        KeyCode::KeyI,
+        KeyCode::KeyK,
+        KeyCode::Space,
+    ],
 ];
 
+enum Screen {
+    Menu,
+    Game,
+}
+
 struct App {
-    world: World,
+    screen: Screen,
+    config: Config,
+    config_path: Option<PathBuf>,
+    menu: Menu,
+    world: Option<World>,
+    players: Vec<Player>,
+    /// Teclado que gobierna a cada bomber del mundo (`None`: sin controlador implementado).
+    keymaps: Vec<Option<usize>>,
     assets: Option<Assets>,
     ui: Ui,
     keys: HashSet<KeyCode>,
-    /// Pulsaciones de bomba pendientes de consumir en el próximo tick (una por flanco).
-    bomb_latch: [bool; 2],
+    /// Pulsaciones de bomba pendientes de consumir en el próximo tick (una por flanco y teclado).
+    bomb_latch: [bool; 3],
     gfx: Option<(Arc<Window>, Renderer)>,
     last: Instant,
     acc: f64,
 }
 
+fn maps_dir() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/maps")
+}
+
+fn clock_seed() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_nanos() as u64)
+}
+
 impl App {
+    fn save_config(&self) {
+        if let Some(path) = &self.config_path {
+            if let Err(e) = self.config.save(path) {
+                eprintln!("no se pudo guardar la configuración en {path:?}: {e}");
+            }
+        }
+    }
+
+    /// `Start Local`: monta el mundo con los jugadores activos. No hace nada si no hay rivales.
+    fn start_game(&mut self) {
+        if self.config.number_of_opponents() < 2 {
+            return;
+        }
+        let players: Vec<_> = self.config.enabled_bombers().cloned().collect();
+        let seed = clock_seed();
+        let Ok(mut list) = MapList::scan(maps_dir()) else {
+            return;
+        };
+        if list.paths.is_empty() {
+            return;
+        }
+        // Primer mapa: el elegido (`start_map`) o uno al azar; salta a uno donde quepan todos.
+        let first = if self.config.random_map_order {
+            list.random_for(players.len(), &mut Rng::new(seed))
+        } else {
+            list.index = (self.config.start_map.max(0) as usize).min(list.paths.len() - 1);
+            match list.current() {
+                Ok(m) if m.max_players as usize >= players.len() => Ok(m),
+                _ => list.next_for(players.len()),
+            }
+        };
+        let Ok(map): Result<Map, _> = first else {
+            return;
+        };
+
+        let mut world = World::with_config(map, seed, self.config.clone());
+        world.playlist = Some(list);
+        world.start_match(players.len());
+        self.keymaps = players
+            .iter()
+            .map(|p| match p.controller {
+                ControllerKind::Keymap(n) => Some(n as usize - 1),
+                // TODO(IA, ratón, joystick): sin controlador todavía; el bomber se queda quieto.
+                _ => None,
+            })
+            .collect();
+        self.players = players
+            .into_iter()
+            .map(|p| Player {
+                name: p.name,
+                skin: p.skin as usize,
+            })
+            .collect();
+        self.world = Some(world);
+        self.bomb_latch = [false; 3];
+        self.ui = Ui::new();
+        self.screen = Screen::Game;
+        self.acc = 0.0;
+        self.last = Instant::now();
+    }
+
     /// La tecla de bomba actúa solo al pulsar (Controller_Keyboard::update: flanco de subida).
+    /// Si dos bombers comparten teclado, solo el primero recibe cada pulsación.
     fn inputs(&mut self) -> Vec<Input> {
         let keys = &self.keys;
         let latch = &mut self.bomb_latch;
-        KEYMAPS
+        self.keymaps
             .iter()
-            .zip(latch.iter_mut())
-            .map(|(k, bomb)| {
-                let down = |i: usize| keys.contains(&k[i]);
-                Input {
-                    left: down(0),
-                    right: down(1),
-                    up: down(2),
-                    down: down(3),
-                    bomb: std::mem::take(bomb),
+            .map(|km| match *km {
+                None => Input::default(),
+                Some(i) => {
+                    let k = &KEYMAPS[i];
+                    let down = |j: usize| keys.contains(&k[j]);
+                    Input {
+                        left: down(0),
+                        right: down(1),
+                        up: down(2),
+                        down: down(3),
+                        bomb: std::mem::take(&mut latch[i]),
+                    }
                 }
             })
             .collect()
     }
 
     fn key_pressed(&mut self, el: &ActiveEventLoop, code: KeyCode, repeat: bool) {
-        match code {
-            KeyCode::Escape => el.exit(),
-            // Del marcador a la siguiente ronda (GameStatus::show espera la barra espaciadora).
-            KeyCode::Space if !repeat && matches!(self.world.phase, Phase::Scores { .. }) => {
-                self.world.confirm();
-                self.bomb_latch = [false; 2];
-            }
-            _ => {}
-        }
-        if !repeat {
-            for (i, k) in KEYMAPS.iter().enumerate() {
-                if code == k[4] {
-                    self.bomb_latch[i] = true;
+        match self.screen {
+            Screen::Menu => match self.menu.key(code) {
+                Outcome::Activate(Id::Quit) => el.exit(),
+                Outcome::Activate(Id::StartLocal) => self.start_game(),
+                Outcome::Activate(_) | Outcome::None => {}
+                Outcome::Changed(id, v) => {
+                    id.set(&mut self.config, v);
+                    self.menu.sync(&self.config);
+                    self.save_config();
+                }
+            },
+            Screen::Game => {
+                match code {
+                    // `quit current game`: de vuelta al menú.
+                    KeyCode::Escape => {
+                        self.screen = Screen::Menu;
+                        self.world = None;
+                        return;
+                    }
+                    // Del marcador a la siguiente ronda; tras la última, de vuelta al menú
+                    // (GameStatus::show espera la barra espaciadora).
+                    KeyCode::Space if !repeat => {
+                        if let Some(w) = self.world.as_mut() {
+                            if let Phase::Scores { end_of_game, .. } = w.phase {
+                                if end_of_game {
+                                    self.screen = Screen::Menu;
+                                    self.world = None;
+                                    return;
+                                }
+                                w.confirm();
+                                self.bomb_latch = [false; 3];
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+                if !repeat {
+                    for (i, k) in KEYMAPS.iter().enumerate() {
+                        if code == k[4] {
+                            self.bomb_latch[i] = true;
+                        }
+                    }
                 }
             }
         }
@@ -128,15 +254,31 @@ impl ApplicationHandler for App {
                 let frame = (now - self.last).as_secs_f64().min(0.25);
                 self.acc += frame;
                 self.last = now;
-                let dt = 1.0 / TICK_HZ as f64;
-                while self.acc >= dt {
-                    let inputs = self.inputs();
-                    self.world.step(&inputs);
-                    self.acc -= dt;
+                if matches!(self.screen, Screen::Game) {
+                    let dt = 1.0 / TICK_HZ as f64;
+                    while self.acc >= dt {
+                        let inputs = self.inputs();
+                        if let Some(w) = self.world.as_mut() {
+                            w.step(&inputs);
+                        }
+                        self.acc -= dt;
+                    }
+                    if let Some(w) = &self.world {
+                        self.ui.update(w, frame as f32);
+                    }
+                } else {
+                    self.acc = 0.0;
                 }
-                self.ui.update(&self.world, frame as f32);
                 if let (Some((w, r)), Some(a)) = (self.gfx.as_mut(), self.assets.as_ref()) {
-                    draw::draw(r, a, &self.world, &self.ui);
+                    match (&self.screen, &self.world) {
+                        (Screen::Game, Some(world)) => {
+                            draw::draw(r, a, world, &self.ui, &self.players)
+                        }
+                        _ => {
+                            self.menu.draw(r, a);
+                            r.render();
+                        }
+                    }
                     w.request_redraw();
                 }
             }
@@ -146,41 +288,24 @@ impl ApplicationHandler for App {
 }
 
 fn main() {
-    let path = std::env::args()
-        .nth(1)
-        .unwrap_or_else(|| "assets/maps/Arena.map".into());
-    // Semilla distinta en cada partida.
-    let seed = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |d| d.as_nanos() as u64);
-
-    // Las rondas siguientes recorren los mapas de la misma carpeta, en orden alfabético.
-    let mut playlist = Path::new(&path)
-        .parent()
-        .and_then(|dir| MapList::scan(dir).ok());
-    if let Some(list) = playlist.as_mut() {
-        match list
-            .paths
-            .iter()
-            .position(|p| p.file_name() == Path::new(&path).file_name())
-        {
-            Some(i) => list.index = i,
-            None => playlist = None,
-        }
-    }
-    let map = Map::load(&path).unwrap_or_else(|e| panic!("no se pudo cargar {path}: {e:?}"));
-    let mut world = World::with_seed(map, seed);
-    world.playlist = playlist;
-    world.start_match(KEYMAPS.len());
+    let config_path = Config::default_path();
+    let config = config_path.as_deref().map(Config::load).unwrap_or_default();
+    let menu = Menu::new(&config);
 
     let el = EventLoop::new().unwrap();
     el.set_control_flow(ControlFlow::Poll);
     el.run_app(&mut App {
-        world,
+        screen: Screen::Menu,
+        config,
+        config_path,
+        menu,
+        world: None,
+        players: Vec::new(),
+        keymaps: Vec::new(),
         assets: None,
         ui: Ui::new(),
         keys: HashSet::new(),
-        bomb_latch: [false; 2],
+        bomb_latch: [false; 3],
         gfx: None,
         last: Instant::now(),
         acc: 0.0,

@@ -2,11 +2,17 @@
 
 use cb_render::{Font, Renderer, Sheet, TextureId};
 
+/// Aspecto de bomber: hoja de sprites y desplazamiento vertical de dibujo (`Bomber::Bomber`).
+pub struct Skin {
+    pub sheet: Sheet,
+    pub offset_y: f32,
+}
+
 pub struct Assets {
     pub maptiles: Sheet,
     pub addons: Sheet,
-    /// Skins 0 (snake) y 1 (tux): celdas de 40x60 (Resources::Bombers).
-    pub bombers: [Sheet; 2],
+    /// Los 8 aspectos, en el orden de `Resources::Bombers`.
+    pub skins: Vec<Skin>,
     /// bombs.png: 4 frames por color de bomber (celdas de 40x40, 8 columnas).
     pub bombs: Sheet,
     /// explosion2.png: 7 columnas (tipo de segmento) x 3 filas (frame de animación).
@@ -18,6 +24,7 @@ pub struct Assets {
     /// cup2.png: la copa del marcador.
     pub cup: Sheet,
     pub status_bg: TextureId,
+    pub title_bg: TextureId,
     /// DejaVuSans-Bold a 28 y a 18 px (Resources::Font_big / Font_small).
     pub font_big: Font,
     pub font_small: Font,
@@ -38,9 +45,23 @@ impl Assets {
         let (maptiles, addons) = (tex("maptiles.png"), tex("maptile_addons.png"));
         let (bombs, explosion, extras) =
             (tex("bombs.png"), tex("explosion2.png"), tex("extras2.png"));
-        let (snake, tux) = (tex("bomber_snake.png"), tex("bomber_tux.png"));
-        let (observer, cup, status_bg) =
-            (tex("observer.png"), tex("cup2.png"), tex("game_status.png"));
+        // (archivo, alto de celda, offset_y): los de 60 px de alto se dibujan a y + 11.
+        let skin_files = [
+            ("bomber_snake.png", 60.0, 11.0),
+            ("bomber_tux.png", 60.0, 11.0),
+            ("bomber_spider.png", 40.0, 40.0),
+            ("bomber_bsd.png", 60.0, 11.0),
+            ("bomber_dull_red.png", 40.0, 40.0),
+            ("bomber_dull_blue.png", 40.0, 40.0),
+            ("bomber_dull_yellow.png", 40.0, 40.0),
+            ("bomber_dull_green.png", 40.0, 40.0),
+        ];
+        let skin_tex: Vec<_> = skin_files
+            .iter()
+            .map(|(f, h, o)| (tex(f), *h, *o))
+            .collect();
+        let (observer, cup) = (tex("observer.png"), tex("cup2.png"));
+        let (status_bg, title_bg) = (tex("game_status.png"), tex("clanbomber_title_andi.png"));
 
         let font = |r: &mut Renderer, px: f32| {
             let path = format!("{dir}/fonts/DejaVuSans-Bold.ttf");
@@ -55,10 +76,17 @@ impl Assets {
             bombs: r.sheet(bombs, 40.0, 40.0),
             explosion: r.sheet(explosion, 40.0, 40.0),
             extras: r.sheet(extras, 40.0, 40.0),
-            bombers: [r.sheet(snake, 40.0, 60.0), r.sheet(tux, 40.0, 60.0)],
+            skins: skin_tex
+                .into_iter()
+                .map(|(t, h, o)| Skin {
+                    sheet: r.sheet(t, 40.0, h),
+                    offset_y: o,
+                })
+                .collect(),
             observer: r.sheet(observer, 40.0, 40.0),
             cup: r.sheet(cup, 40.0, 40.0),
             status_bg,
+            title_bg,
             font_big,
             font_small,
         }

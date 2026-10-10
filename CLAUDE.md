@@ -21,8 +21,9 @@ cargo fmt
   texturas (`load_texture`), hojas de sprites (`Sheet`), texto TrueType con atlas de glifos (`load_font`,
   `text`, vía `fontdue`), shader en `quad.wgsl`.
 - `crates/game` (`cb-game`): binario winit. Loop con acumulador de tiempo → `World::step` a 60 Hz → dibujo.
-  `assets.rs` carga texturas y fuentes; `draw.rs` dibuja mapa, HUD y marcador. Espacio pasa del marcador a la
-  siguiente ronda.
+  `assets.rs` carga texturas y fuentes; `draw.rs` dibuja mapa, HUD y marcador; `menu.rs` es el menú en árbol
+  (opciones de `Config`, guardadas al cambiar). Pantallas: menú ⇄ partida (Esc vuelve al menú; Espacio pasa
+  del marcador a la siguiente ronda).
 - `assets/maps`, `assets/pics`: copiados del fork de referencia (ver abajo).
 
 ## Referencia: el original
@@ -68,4 +69,6 @@ enum (`CurrentSurfaceTexture`), `VertexState.buffers` es `&[Option<_>]`, `bind_g
 1. ~~Mapa con texturas~~ 2. ~~Bomber~~ 3. ~~Bombas y explosiones~~
 4. ~~Extras, enfermedades, hielo/flechas/trampas, ciclo de partida (rondas, reloj, marcador)~~
    → pendiente: cadáveres y partes que salen volando al morir.
-5. Menús (selección de mapa y jugadores), IA, sonido. 6. Partículas (compute), sprites con IA.
+5. Menús: ~~menú principal y opciones~~ → pendiente: Local Player Setup (nombre, aspecto, equipo, controlador),
+   Map Selection con vista previa, Credits/Help/Map Editor, intro. IA y sonido.
+6. Partículas (compute), sprites con IA.

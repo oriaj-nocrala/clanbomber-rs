@@ -9,16 +9,26 @@ use crate::assets::Assets;
 /// Tema visual (0..6): cada tema ocupa 4 celdas en maptiles.png.
 const THEME: u32 = 0;
 
-/// Offset de dibujo de los bombers de 40x60 (Bomber::Bomber: offset_x = 60, offset_y = 11).
-const BOMBER_OFFSET: (f32, f32) = (60.0, 11.0);
+/// `offset_x` de dibujo de todos los bombers (`Bomber::Bomber`); el `offset_y` depende del aspecto.
+const BOMBER_OFFSET_X: f32 = 60.0;
 
-/// Nombres por defecto de `Config` en el original.
-pub const NAMES: [&str; 5] = ["Are", "You", "Still", "Watching", "AIs"];
+/// Quién juega en cada puesto del mundo (mismo orden que `World::bombers`).
+pub struct Player {
+    pub name: String,
+    /// Aspecto (0..8): índice en `Assets::skins` y color de sus bombas.
+    pub skin: usize,
+}
 
 /// Color de texto del original (0xd3d7cf), pasado a lineal porque la superficie es sRGB.
-fn text_color() -> [f32; 4] {
+pub fn text_color() -> [f32; 4] {
     let lin = |c: u8| (c as f32 / 255.0).powf(2.2);
     [lin(0xd3), lin(0xd7), lin(0xcf), 1.0]
+}
+
+/// Color RGBA de 8 bits (como `CB_FillRect`) pasado a lineal: el alfa no se convierte.
+pub fn srgb_rgba(r: u8, g: u8, b: u8, a: u8) -> [f32; 4] {
+    let lin = |c: u8| (c as f32 / 255.0).powf(2.2);
+    [lin(r), lin(g), lin(b), a as f32 / 255.0]
 }
 
 /// Estado de la interfaz que no vive en el mundo.
@@ -104,13 +114,13 @@ fn draw_falling(
     draw_scaled(r, sheet, cell, pos, offset_y, s, s);
 }
 
-pub fn draw(r: &mut Renderer, a: &Assets, w: &World, ui: &Ui) {
+pub fn draw(r: &mut Renderer, a: &Assets, w: &World, ui: &Ui, players: &[Player]) {
     match w.phase {
-        Phase::Playing => draw_game(r, a, w),
+        Phase::Playing => draw_game(r, a, w, players),
         Phase::Scores {
             winner,
             end_of_game,
-        } => draw_scores(r, a, w, ui, winner, end_of_game),
+        } => draw_scores(r, a, w, ui, players, winner, end_of_game),
     }
     r.render();
 }
@@ -139,7 +149,7 @@ fn tile_cells(w: &World, x: i32, y: i32) -> Option<(u32, Option<u32>)> {
     })
 }
 
-fn draw_game(r: &mut Renderer, a: &Assets, w: &World) {
+fn draw_game(r: &mut Renderer, a: &Assets, w: &World, players: &[Player]) {
     let t = TILE_PIXELS as f32;
     // El mapa mide 680x520; se centra en el lienzo virtual de 800x600 (offset 60,40 como el original).
     let (ox, oy) = (
@@ -208,7 +218,7 @@ fn draw_game(r: &mut Renderer, a: &Assets, w: &World) {
         );
     }
     for b in w.bombs().filter(|b| b.falling) {
-        let cell = b.owner as u32 * 4 + b.frame();
+        let cell = players[b.owner].skin as u32 * 4 + b.frame();
         draw_falling(
             r,
             &a.bombs,
@@ -218,15 +228,16 @@ fn draw_game(r: &mut Renderer, a: &Assets, w: &World) {
             b.fall_countdown,
         );
     }
-    for (b, sheet) in w.bombers.iter().zip(a.bombers.iter().cycle()) {
+    for (b, p) in w.bombers.iter().zip(players) {
+        let skin = &a.skins[p.skin];
         if !b.dead && b.is_falling() {
             let pos = (ox + b.get_x() as f32, oy + b.get_y() as f32);
             draw_falling(
                 r,
-                sheet,
+                &skin.sheet,
                 b.sprite_nr(),
                 pos,
-                BOMBER_OFFSET.1,
+                skin.offset_y,
                 b.fall_countdown,
             );
         }
@@ -274,37 +285,46 @@ fn draw_game(r: &mut Renderer, a: &Assets, w: &World) {
     }
     for b in w.bombs().filter(|b| !b.falling && !b.flight.active) {
         // sprite_nr = color * 4 + frame (color = skin del bomber que la puso).
-        let cell = b.owner as u32 * 4 + b.frame();
+        let cell = players[b.owner].skin as u32 * 4 + b.frame();
         r.sheet_sprite(&a.bombs, cell, ox + b.x, oy + b.y);
     }
     // Un bomber enfermo pulsa (Bomber::show): 2π cada ~314 ms (Timer::get_time() / 50).
     let ms = w.tick as f64 * 1000.0 / TICK_HZ as f64;
     let pulse = ((ms / 50.0) % (2.0 * std::f64::consts::PI)).sin() as f32 * 0.15 + 1.0;
-    for (b, sheet) in w
+    for (b, p) in w
         .bombers
         .iter()
-        .zip(a.bombers.iter().cycle())
+        .zip(players)
         .filter(|(b, _)| !b.dead && !b.is_falling())
     {
+        let skin = &a.skins[p.skin];
         if b.flight.active {
             // Entrada de ronda: sale volando desde el centro del mapa.
-            let pos = (ox + b.x, b.y + BOMBER_OFFSET.1);
-            draw_flying(r, sheet, b.sprite_nr(), pos, b.flight.scale(), 1.0);
+            let pos = (ox + b.x, b.y + skin.offset_y);
+            draw_flying(r, &skin.sheet, b.sprite_nr(), pos, b.flight.scale(), 1.0);
         } else if b.is_diseased() {
             let pos = (ox + b.get_x() as f32, oy + b.get_y() as f32);
-            draw_scaled(r, sheet, b.sprite_nr(), pos, BOMBER_OFFSET.1, pulse, 1.0);
+            draw_scaled(
+                r,
+                &skin.sheet,
+                b.sprite_nr(),
+                pos,
+                skin.offset_y,
+                pulse,
+                1.0,
+            );
         } else {
             r.sheet_sprite(
-                sheet,
+                &skin.sheet,
                 b.sprite_nr(),
-                b.get_x() as f32 + BOMBER_OFFSET.0,
-                b.get_y() as f32 + BOMBER_OFFSET.1,
+                b.get_x() as f32 + BOMBER_OFFSET_X,
+                b.get_y() as f32 + skin.offset_y,
             );
         }
     }
     // Objetos en el aire (Z_FLYING): por encima de todo. Crecen hasta mitad de trayecto.
     for b in w.bombs().filter(|b| b.flight.active) {
-        let cell = b.owner as u32 * 4 + b.frame();
+        let cell = players[b.owner].skin as u32 * 4 + b.frame();
         draw_flying(
             r,
             &a.bombs,
@@ -377,6 +397,7 @@ fn draw_scores(
     a: &Assets,
     w: &World,
     ui: &Ui,
+    players: &[Player],
     winner: Option<usize>,
     end_of_game: bool,
 ) {
@@ -395,18 +416,19 @@ fn draw_scores(
         Align::Center,
     );
     let title = match winner {
-        Some(i) => format!("{} won", NAMES[i % NAMES.len()]),
+        Some(i) => format!("{} won", players[i].name),
         None => "Draw Game".to_owned(),
     };
     r.text(&a.font_big, &title, 500.0, 40.0, col, Align::Center);
 
     let ms = w.tick as f64 * 1000.0 / TICK_HZ as f64;
-    for (i, (b, sheet)) in w.bombers.iter().zip(a.bombers.iter().cycle()).enumerate() {
+    for (i, (b, p)) in w.bombers.iter().zip(players).enumerate() {
+        let (sheet, off) = (&a.skins[p.skin].sheet, a.skins[p.skin].offset_y);
         let nr = (i + 1) as f32;
         let row_y = 150.0 + nr * 43.0;
         r.text(
             &a.font_big,
-            NAMES[i % NAMES.len()],
+            p.name.as_str(),
             70.0,
             157.0 + nr * 43.0,
             col,
@@ -422,7 +444,7 @@ fn draw_scores(
         };
         if winner == Some(i) && !end_of_game {
             let x = 5.0 + ((i + 1) % 2) as f32 * 20.0;
-            r.sheet_sprite(sheet, b.sprite_nr(), x, row_y - 40.0 + BOMBER_OFFSET.1);
+            r.sheet_sprite(sheet, b.sprite_nr(), x, row_y - 40.0 + off);
             for k in 0..(b.points - 1).max(0) {
                 cup(r, 300.0 + k as f32 * 43.0, row_y, 1.0);
             }
@@ -436,7 +458,7 @@ fn draw_scores(
             // El campeón de la partida: todo pulsa y se desliza hacia dentro.
             let sf = (((ms / 100.0).sin() + 2.0) / 2.0) as f32;
             let pos = (5.0 + (800.0 - ui.scroll_in) / 3.0, row_y);
-            draw_scaled(r, sheet, b.sprite_nr(), pos, BOMBER_OFFSET.1, sf, 1.0);
+            draw_scaled(r, sheet, b.sprite_nr(), pos, off, sf, 1.0);
             for k in 0..(b.points - 1).max(0) {
                 cup(
                     r,
@@ -449,7 +471,7 @@ fn draw_scores(
             cup(r, x, 170.0 + nr * 43.0 - 20.0 * sf, sf);
         } else {
             let x = 5.0 + ((i + 1) % 2) as f32 * 20.0;
-            r.sheet_sprite(sheet, b.sprite_nr(), x, row_y - 40.0 + BOMBER_OFFSET.1);
+            r.sheet_sprite(sheet, b.sprite_nr(), x, row_y - 40.0 + off);
             for k in 0..b.points {
                 cup(r, 300.0 + k as f32 * 43.0, row_y, 1.0);
             }
