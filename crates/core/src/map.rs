@@ -13,6 +13,18 @@ pub enum Dir {
     Down,
 }
 
+impl Dir {
+    /// Orden del enum `Direction` del original: DOWN=0, LEFT=1, UP=2, RIGHT=3.
+    pub fn index(self) -> u32 {
+        match self {
+            Dir::Down => 0,
+            Dir::Left => 1,
+            Dir::Up => 2,
+            Dir::Right => 3,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Tile {
     /// Fuera del mapa (`-` y cualquier carácter desconocido).
@@ -113,6 +125,26 @@ impl Map {
         } else {
             self.tiles[x as usize][y as usize]
         }
+    }
+
+    /// ¿Bloquea el paso el tile en coordenadas de tile? Fuera del mapa se comporta como el
+    /// `dummy_maptile` del original (un muro). `Tile::None` dentro del mapa no bloquea,
+    /// igual que `MapTile_None` (ClanBomber2: MapTile_None.cpp).
+    pub fn blocking_tile(&self, tx: i32, ty: i32) -> bool {
+        if tx < 0 || ty < 0 || tx as usize >= MAP_WIDTH || ty as usize >= MAP_HEIGHT {
+            return true;
+        }
+        matches!(self.tiles[tx as usize][ty as usize], Tile::Wall | Tile::Box)
+    }
+
+    /// Igual que [`blocking_tile`] pero en píxeles (`Map::get_maptile_xy` del original):
+    /// los píxeles negativos caen fuera del mapa.
+    pub fn blocking_px(&self, px: i32, py: i32) -> bool {
+        if px < 0 || py < 0 {
+            return true;
+        }
+        let t = TILE_PIXELS as i32;
+        self.blocking_tile(px / t, py / t)
     }
 
     pub fn set(&mut self, x: usize, y: usize, t: Tile) {
