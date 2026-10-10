@@ -62,6 +62,8 @@ pub struct Extra {
     pub destroyed: bool,
     pub destroy_countdown: f32,
     pub delete_me: bool,
+    pub falling: bool,
+    pub fall_countdown: f32,
 }
 
 impl Extra {
@@ -73,11 +75,21 @@ impl Extra {
             destroyed: false,
             destroy_countdown: 0.0,
             delete_me: false,
+            falling: false,
+            fall_countdown: 0.0,
         }
     }
 
     pub fn tile(&self) -> (i32, i32) {
         ((self.x + 20) / 40, (self.y + 20) / 40)
+    }
+
+    /// `GameObject::fall()`: cae por un agujero y desaparece tras 1 s.
+    pub fn fall(&mut self) {
+        if !self.falling {
+            self.falling = true;
+            self.fall_countdown = 1.0;
+        }
     }
 
     /// `Extra::destroy()`. TODO(vuelo): los no destruibles deberían volar a una casilla libre.

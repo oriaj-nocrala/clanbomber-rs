@@ -158,6 +158,29 @@ impl Map {
         self.blocking_tile(px / t, py / t)
     }
 
+    /// ¿Es un muro (o el borde)? `get_maptile_xy(..)->get_type() == WALL` del original; el
+    /// `dummy_maptile` de fuera del mapa es un muro. Las cajas no cuentan.
+    pub fn is_wall_px(&self, px: i32, py: i32) -> bool {
+        if px < 0 || py < 0 {
+            return true;
+        }
+        let t = TILE_PIXELS as i32;
+        let (tx, ty) = (px / t, py / t);
+        if tx as usize >= MAP_WIDTH || ty as usize >= MAP_HEIGHT {
+            return true;
+        }
+        self.tiles[tx as usize][ty as usize] == Tile::Wall
+    }
+
+    /// `MapTile_None`: dentro del mapa, sin suelo (los objetos caen).
+    pub fn is_hole(&self, tx: i32, ty: i32) -> bool {
+        tx >= 0
+            && ty >= 0
+            && (tx as usize) < MAP_WIDTH
+            && (ty as usize) < MAP_HEIGHT
+            && self.tiles[tx as usize][ty as usize] == Tile::None
+    }
+
     /// `MapTile::destroy()`: solo las cajas reaccionan; fuera del mapa no hace nada.
     pub fn destroy(&mut self, tx: i32, ty: i32) {
         if self.get(tx, ty) == Tile::Box && !self.is_crumbling(tx, ty) {

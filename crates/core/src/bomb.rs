@@ -1,7 +1,7 @@
 //! Bombas y explosiones (ClanBomber2: Bomb.cpp, Explosion.cpp).
 
 use crate::extra::Extra;
-use crate::map::{Map, TILE_PIXELS};
+use crate::map::{Dir, Map, TILE_PIXELS};
 
 const T: i32 = TILE_PIXELS as i32;
 
@@ -12,11 +12,14 @@ pub const BOMB_DELAY: f32 = 0.1;
 /// `Explosion::detonation_period`.
 pub const EXPLOSION_PERIOD: f32 = 0.5;
 
+/// `Config::bomb_speed`: píxeles por segundo al patearla y base de la velocidad de vuelo.
+pub const BOMB_SPEED: i32 = 160;
+
 #[derive(Clone, Debug)]
 pub struct Bomb {
-    /// Posición en píxeles dentro del mapa (múltiplo de 40 mientras no se patee).
-    pub x: i32,
-    pub y: i32,
+    /// Posición en píxeles dentro del mapa (múltiplo de 40 mientras no se patee o lance).
+    pub x: f32,
+    pub y: f32,
     pub power: i32,
     /// Índice del bomber que la puso.
     pub owner: usize,
@@ -25,24 +28,62 @@ pub struct Bomb {
     pub cur_scale: f32,
     pub exploding: bool,
     pub delete_me: bool,
+    /// Dirección de desplazamiento (patada o lanzamiento); `None` = quieta.
+    pub cur_dir: Option<Dir>,
+    pub speed: i32,
+    pub remainder: f32,
+    pub flying: bool,
+    fly_dest: (f32, f32),
+    fly_dist: (f32, f32),
+    pub fly_speed: f32,
+    /// 0..1 durante el vuelo; queda en exactamente 1 al aterrizar (indica vuelo terminado).
+    pub fly_progress: f32,
+    pub falling: bool,
+    pub fall_countdown: f32,
+    pub fallen_down: bool,
 }
 
 impl Bomb {
     pub fn new(tx: i32, ty: i32, power: i32, owner: usize) -> Self {
         Bomb {
-            x: tx * T,
-            y: ty * T,
+            x: (tx * T) as f32,
+            y: (ty * T) as f32,
             power,
             owner,
             countdown: BOMB_COUNTDOWN,
             cur_scale: 0.0,
             exploding: false,
             delete_me: false,
+            cur_dir: None,
+            speed: BOMB_SPEED,
+            remainder: 0.0,
+            flying: false,
+            fly_dest: (0.0, 0.0),
+            fly_dist: (0.0, 0.0),
+            fly_speed: 0.0,
+            fly_progress: 0.0,
+            falling: false,
+            fall_countdown: 0.0,
+            fallen_down: false,
         }
     }
 
+    pub fn get_x(&self) -> i32 {
+        self.x as i32
+    }
+
+    pub fn get_y(&self) -> i32 {
+        self.y as i32
+    }
+
+    /// Casilla bajo el centro (`get_maptile()`).
     pub fn tile(&self) -> (i32, i32) {
-        ((self.x + 20) / T, (self.y + 20) / T)
+        ((self.get_x() + 20) / T, (self.get_y() + 20) / T)
+    }
+
+    /// ¿Cuenta como `tile->bomb`? El original excluye las que vuelan o caen (`maptilize_objects`).
+    pub fn rests_on_tile(&self) -> bool {
+        !self.flying && !self.falling
     }
 
     pub fn frame(&self) -> u32 {
@@ -57,6 +98,110 @@ impl Bomb {
             return self.countdown == 0.0;
         }
         false
+    }
+
+    /// `Bomb::kick()`: empieza a deslizarse (no si está en el aire).
+    pub fn kick(&mut self, dir: Dir) {
+        if !self.flying {
+            self.cur_dir = Some(dir);
+        }
+    }
+
+    /// `Bomb::throww(dir, fields)`: vuela `fields` casillas (4 al lanzarla con el guante).
+    pub fn throw(&mut self, dir: Dir, fields: i32) {
+        if fields > 0 && !self.flying {
+            self.cur_dir = Some(dir);
+            let (x, y) = (self.get_x(), self.get_y());
+            let d = fields * T;
+            match dir {
+                Dir::Up => self.fly_to(x, y - d),
+                Dir::Down => self.fly_to(x, y + d),
+                Dir::Left => self.fly_to(x - d, y),
+                Dir::Right => self.fly_to(x + d, y),
+            }
+        }
+    }
+
+    /// `GameObject::fly_to`: la velocidad se normaliza para que el vuelo dure `dist/speed` s.
+    fn fly_to(&mut self, x: i32, y: i32) {
+        if !self.flying && !self.falling && !self.fallen_down {
+            self.flying = true;
+            self.fly_dest = (x as f32, y as f32);
+            self.fly_progress = 0.0;
+            self.fly_dist = (x as f32 - self.x, y as f32 - self.y);
+            let len =
+                (self.fly_dist.0 * self.fly_dist.0 + self.fly_dist.1 * self.fly_dist.1).sqrt();
+            self.fly_speed = self.speed as f32 / len;
+        }
+    }
+
+    /// `GameObject::continue_flying` (con `can_fly_over_walls == false`: los muros y el borde
+    /// frenan el vuelo; las cajas no).
+    pub fn continue_flying(&mut self, map: &Map, dt: f32) {
+        if dt == 0.0 {
+            return;
+        }
+        let mut time_step = dt;
+        let mut steps = 1;
+        while ((time_step * self.fly_speed * self.fly_dist.0) as i32).abs() > 5
+            || ((time_step * self.fly_speed * self.fly_dist.1) as i32).abs() > 5
+        {
+            time_step /= 2.0;
+            steps *= 2;
+        }
+
+        for _ in 0..steps {
+            let (dx, dy) = (
+                time_step * self.fly_speed * self.fly_dist.0,
+                time_step * self.fly_speed * self.fly_dist.1,
+            );
+            self.x += dx;
+            self.y += dy;
+            let (x, y) = (self.x as i32, self.y as i32);
+            if map.is_wall_px(x, y)
+                || map.is_wall_px(x + 39, y)
+                || map.is_wall_px(x, y + 39)
+                || map.is_wall_px(x + 39, y + 39)
+            {
+                self.x -= dx;
+                self.y -= dy;
+                self.fly_dest = (self.x, self.y);
+            }
+            self.fly_progress += time_step * self.fly_speed;
+            if self.fly_progress >= 1.0 {
+                self.flying = false;
+                self.fly_progress = 1.0;
+                self.x = self.fly_dest.0;
+                self.y = self.fly_dest.1;
+            }
+        }
+    }
+
+    /// `GameObject::fall()`.
+    pub fn fall(&mut self) {
+        if !self.falling {
+            self.falling = true;
+            self.fall_countdown = 1.0;
+        }
+    }
+
+    /// `GameObject::continue_falling()`.
+    pub fn continue_falling(&mut self, dt: f32) {
+        self.speed = (self.fall_countdown * 60.0) as i32;
+        self.fall_countdown -= dt;
+        if self.fall_countdown < 0.0 {
+            self.fallen_down = true;
+            self.fall_countdown = 0.0;
+        }
+    }
+
+    /// `Bomb::stop()`: se detiene y se alinea con la casilla.
+    pub fn stop(&mut self) {
+        if !self.flying {
+            self.cur_dir = None;
+            self.x = (((self.get_x() + 20) / T) * T) as f32;
+            self.y = (((self.get_y() + 20) / T) * T) as f32;
+        }
     }
 }
 

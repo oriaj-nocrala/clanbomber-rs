@@ -5,6 +5,7 @@ pub mod bomb;
 pub mod bomber;
 pub mod extra;
 pub mod map;
+pub mod movement;
 pub mod rng;
 pub mod sim;
 

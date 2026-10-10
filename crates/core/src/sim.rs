@@ -1,7 +1,8 @@
 use crate::bomb::{Bomb, Explosion, Object};
-use crate::bomber::{Bomber, Input};
+use crate::bomber::{Action, Bomber, Input};
 use crate::extra::{roll_extra, Extra, ExtraConfig, ExtraKind};
 use crate::map::{Map, TILE_PIXELS};
+use crate::movement::{advance, Env, Mover, Pos};
 use crate::rng::Rng;
 
 /// Frecuencia fija de la simulación. El render interpola entre ticks.
@@ -13,11 +14,57 @@ pub const TICK_DT: f32 = 1.0 / TICK_HZ as f32;
 pub struct World {
     pub map: Map,
     pub bombers: Vec<Bomber>,
-    /// Bombas y explosiones en orden de creación (`ClanBomberApplication::objects`).
+    /// Bombas, explosiones y extras en orden de creación (`ClanBomberApplication::objects`).
     pub objects: Vec<Object>,
     pub tick: u64,
     pub rng: Rng,
     pub extra_config: ExtraConfig,
+}
+
+/// Vista de solo lectura para las consultas de colisión (`tile->bomb`, `has_bomber`).
+struct View<'a> {
+    objects: &'a [Object],
+    bombers: &'a [Bomber],
+}
+
+impl View<'_> {
+    /// Última bomba apoyada en la casilla (`maptilize_objects` deja la última en `tile->bomb`).
+    fn bomb_at(&self, tx: i32, ty: i32, except: Option<usize>) -> Option<usize> {
+        self.objects
+            .iter()
+            .enumerate()
+            .rev()
+            .find_map(|(i, o)| match o {
+                Object::Bomb(b)
+                    if Some(i) != except && b.rests_on_tile() && b.tile() == (tx, ty) =>
+                {
+                    Some(i)
+                }
+                _ => None,
+            })
+    }
+
+    fn has_bomber(&self, tx: i32, ty: i32) -> bool {
+        self.bombers.iter().any(|b| !b.dead && b.tile() == (tx, ty))
+    }
+
+    fn bomb_is_still(&self, i: usize) -> bool {
+        matches!(&self.objects[i], Object::Bomb(b) if b.cur_dir.is_none())
+    }
+}
+
+impl crate::movement::Query for View<'_> {
+    fn bomb_at(&self, tx: i32, ty: i32) -> Option<usize> {
+        View::bomb_at(self, tx, ty, None)
+    }
+
+    fn has_bomber(&self, tx: i32, ty: i32) -> bool {
+        View::has_bomber(self, tx, ty)
+    }
+
+    fn bomb_is_still(&self, i: usize) -> bool {
+        View::bomb_is_still(self, i)
+    }
 }
 
 impl World {
@@ -50,9 +97,12 @@ impl World {
     }
 
     pub fn bomb_at(&self, tx: i32, ty: i32) -> bool {
-        self.objects
-            .iter()
-            .any(|o| matches!(o, Object::Bomb(b) if b.tile() == (tx, ty)))
+        View {
+            objects: &self.objects,
+            bombers: &self.bombers,
+        }
+        .bomb_at(tx, ty, None)
+        .is_some()
     }
 
     pub fn has_extra(&self, tx: i32, ty: i32) -> bool {
@@ -91,6 +141,7 @@ impl World {
         for (x, y) in self.map.act(TICK_DT) {
             self.spawn_extra(x as i32 * 40, y as i32 * 40);
         }
+        self.fall_into_holes();
 
         // Los objetos creados durante este tick (explosiones) actúan a partir del siguiente.
         for i in 0..self.objects.len() {
@@ -103,20 +154,59 @@ impl World {
 
         for i in 0..self.bombers.len() {
             let input = inputs.get(i).copied().unwrap_or_default();
-            let wants_bomb = {
-                let objects = &self.objects;
-                let bomb_at = |tx: i32, ty: i32| {
-                    objects
-                        .iter()
-                        .any(|o| matches!(o, Object::Bomb(b) if b.tile() == (tx, ty)))
+            // Se actúa sobre una copia para poder consultar al resto del mundo.
+            let mut me = self.bombers[i].clone();
+            let action = {
+                let view = View {
+                    objects: &self.objects,
+                    bombers: &self.bombers,
                 };
-                self.bombers[i].act(TICK_DT, input, &self.map, &bomb_at)
+                me.act(TICK_DT, input, &Self::env(&self.map, &view))
             };
-            if wants_bomb {
-                self.put_bomb(i);
-            }
+            self.bombers[i] = me;
+            self.apply(i, action);
         }
         self.tick += 1;
+    }
+
+    fn env<'a>(map: &'a Map, view: &'a View<'a>) -> Env<'a> {
+        Env { map, q: view }
+    }
+
+    /// Ejecuta lo que pidió el bomber `owner`: patada, lanzamiento y poner bomba.
+    fn apply(&mut self, owner: usize, a: Action) {
+        if let Some((i, dir)) = a.kick {
+            if let Object::Bomb(b) = &mut self.objects[i] {
+                b.kick(dir);
+            }
+        }
+        if let Some((i, dir)) = a.throw_bomb {
+            if let Object::Bomb(b) = &mut self.objects[i] {
+                b.throw(dir, 4);
+            }
+        }
+        if a.put_bomb {
+            self.put_bomb(owner);
+        }
+    }
+
+    /// `MapTile_None::act`: lo que pisa una casilla sin suelo cae.
+    fn fall_into_holes(&mut self) {
+        for b in self.bombers.iter_mut().filter(|b| !b.dead) {
+            let (tx, ty) = b.tile();
+            if self.map.is_hole(tx, ty) {
+                b.fall();
+            }
+        }
+        for o in self.objects.iter_mut() {
+            match o {
+                Object::Bomb(b) if !b.flying && self.map.is_hole(b.tile().0, b.tile().1) => {
+                    b.fall()
+                }
+                Object::Extra(e) if self.map.is_hole(e.tile().0, e.tile().1) => e.fall(),
+                _ => {}
+            }
+        }
     }
 
     /// `Map::add_bomb` + `Bomb::Bomb`: la bomba descuenta una de las disponibles del bomber.
@@ -143,6 +233,14 @@ impl World {
         let Object::Extra(e) = &mut self.objects[i] else {
             return;
         };
+        if e.falling {
+            // En el original un extra que cae nunca se borra pero queda invisible; aquí se borra.
+            e.fall_countdown -= TICK_DT;
+            if e.fall_countdown < 0.0 {
+                e.delete_me = true;
+            }
+            return;
+        }
         if e.destroyed {
             e.destroy_countdown -= TICK_DT;
             if e.destroy_countdown <= 0.0 {
@@ -193,14 +291,61 @@ impl World {
         }
     }
 
-    /// `Bomb::act` (sin patada ni vuelo: TODO(extras)).
+    /// `Bomb::act`: vuelo, aterrizaje, deslizamiento, mecha y explosión.
     fn act_bomb(&mut self, i: usize) {
-        let Object::Bomb(b) = &mut self.objects[i] else {
+        let Object::Bomb(orig) = &self.objects[i] else {
             return;
         };
-        b.cur_scale += TICK_DT * 10.0;
-        b.countdown -= TICK_DT;
-        if b.countdown <= 0.0 {
+        let mut b = orig.clone();
+
+        // GameObject::act: volando solo avanza el vuelo; si no, cae si toca.
+        if b.flying {
+            b.continue_flying(&self.map, TICK_DT);
+        } else if b.falling {
+            b.continue_falling(TICK_DT);
+        }
+
+        let mut explode = false;
+        if b.fallen_down {
+            b.delete_me = true;
+        } else if !b.flying {
+            let view = View {
+                objects: &self.objects,
+                bombers: &self.bombers,
+            };
+            if b.fly_progress == 1.0 {
+                // Acaba de aterrizar: si cae sobre otra bomba, rebota una casilla más.
+                b.fly_progress = 0.0;
+                let (tx, ty) = b.tile();
+                match (view.bomb_at(tx, ty, Some(i)), b.cur_dir) {
+                    (Some(_), Some(dir)) => b.throw(dir, 1),
+                    _ => b.cur_dir = None,
+                }
+            } else {
+                if let Some(dir) = b.cur_dir {
+                    let mover = Mover {
+                        can_pass_bomber: false,
+                        can_kick: false,
+                        self_bomb: Some(i),
+                    };
+                    let env = Self::env(&self.map, &view);
+                    let mut pos = Pos {
+                        x: &mut b.x,
+                        y: &mut b.y,
+                        remainder: &mut b.remainder,
+                    };
+                    if !advance(&mut pos, b.speed, TICK_DT, dir, &mover, &env).moved {
+                        b.stop();
+                    }
+                }
+                b.cur_scale += TICK_DT * 10.0;
+                b.countdown -= TICK_DT;
+                explode = b.countdown <= 0.0;
+            }
+        }
+
+        self.objects[i] = Object::Bomb(b);
+        if explode {
             self.explode(i);
         }
     }
@@ -210,13 +355,13 @@ impl World {
         let Object::Bomb(b) = &mut self.objects[i] else {
             return;
         };
-        if b.exploding {
+        if b.exploding || b.falling {
             return;
         }
         b.exploding = true;
         b.delete_me = true;
         // `snap()`: la bomba se alinea con la casilla antes de explotar.
-        let (x, y) = (((b.x + 20) / 40) * 40, ((b.y + 20) / 40) * 40);
+        let (x, y) = (((b.get_x() + 20) / 40) * 40, ((b.get_y() + 20) / 40) * 40);
         let (power, owner) = (b.power, b.owner);
         let objects = &self.objects;
         let has_extra = |tx: i32, ty: i32| {
@@ -254,16 +399,17 @@ impl World {
             (0, 1, 1, e.down),
         ];
         let mut to_explode = Vec::new();
-        for (dx, dy, start, len) in arms {
-            for k in start..=len {
-                let (tx, ty) = (e.tx + dx * k, e.ty + dy * k);
-                if let Some(j) = self
-                    .objects
-                    .iter()
-                    .position(|o| matches!(o, Object::Bomb(b) if b.tile() == (tx, ty)))
-                {
-                    to_explode.push(j);
-                    break;
+        {
+            let view = View {
+                objects: &self.objects,
+                bombers: &self.bombers,
+            };
+            for (dx, dy, start, len) in arms {
+                for k in start..=len {
+                    if let Some(j) = view.bomb_at(e.tx + dx * k, e.ty + dy * k, None) {
+                        to_explode.push(j);
+                        break;
+                    }
                 }
             }
         }
@@ -281,6 +427,16 @@ impl World {
             let (bx, by) = self.bombers[k].tile();
             if e.covers(bx, by) && self.bombers[k].die() && k != e.owner {
                 self.bombers[e.owner].kills += 1;
+            }
+        }
+
+        // destroy_extras: los que están en la cruz y no vuelan.
+        for o in self.objects.iter_mut() {
+            if let Object::Extra(x) = o {
+                let (bx, by) = x.tile();
+                if e.covers(bx, by) {
+                    x.destroy();
+                }
             }
         }
 
@@ -483,5 +639,141 @@ mod tests {
         let (a, b) = (build(), build());
         assert_eq!(a, b);
         assert!(!a.is_empty() && a.len() < 17);
+    }
+
+    fn world_with(cells: &[(usize, usize, char)]) -> World {
+        let mut rows: Vec<Vec<char>> = vec![vec![' '; 17]; 13];
+        for &(x, y, c) in cells {
+            rows[y][x] = c;
+        }
+        let body: String = rows.iter().flatten().collect();
+        let mut w = World::new(Map::parse(&("x\n2\n".to_owned() + &body)).unwrap());
+        w.bombers = vec![Bomber::new(5 * 40, 5 * 40), Bomber::new(10 * 40, 5 * 40)];
+        w
+    }
+
+    const RIGHT: Input = Input {
+        right: true,
+        left: false,
+        up: false,
+        down: false,
+        bomb: false,
+    };
+
+    #[test]
+    fn kicked_bomb_slides_until_it_meets_a_bomber() {
+        let mut w = world_with(&[]);
+        w.bombers[0] = Bomber::new(3 * 40, 5 * 40);
+        w.bombers[0].can_kick = true;
+        let mut b = Bomb::new(4, 5, 1, 0);
+        b.countdown = 100.0;
+        w.objects.push(Object::Bomb(b));
+        for _ in 0..240 {
+            w.step(&[RIGHT]);
+        }
+        // Se suelta la tecla: la bomba, ya frenada, queda quieta.
+        for _ in 0..5 {
+            w.step(&[]);
+        }
+        let b = w.bombs().next().unwrap();
+        // Bomber 1 está en la casilla 10: la bomba se detiene pegada a ella, alineada.
+        assert_eq!((b.get_x(), b.cur_dir), (360, None));
+    }
+
+    #[test]
+    fn bomb_is_solid_without_kick() {
+        let mut w = world_with(&[]);
+        w.bombers[0] = Bomber::new(3 * 40, 5 * 40);
+        let mut b = Bomb::new(4, 5, 1, 0);
+        b.countdown = 100.0;
+        w.objects.push(Object::Bomb(b));
+        for _ in 0..120 {
+            w.step(&[RIGHT]);
+        }
+        assert_eq!(w.bombs().next().unwrap().get_x(), 160, "no se mueve");
+        assert!(w.bombers[0].get_x() < 160);
+    }
+
+    #[test]
+    fn glove_throws_the_bomb_four_tiles() {
+        let mut w = world_with(&[]);
+        w.bombers[0].gloves = 1;
+        w.step(&[BOMB]);
+        w.step(&[BOMB]);
+        assert!(w.bombs().next().unwrap().flying);
+        for _ in 0..62 {
+            w.step(&[]);
+        }
+        let b = w.bombs().next().unwrap();
+        assert!(!b.flying);
+        assert_eq!((b.get_x(), b.get_y()), (9 * 40, 5 * 40));
+        // Durante el vuelo la mecha no corre: sigue casi completa.
+        assert!(b.countdown > 2.4, "countdown={}", b.countdown);
+    }
+
+    #[test]
+    fn without_glove_the_bomb_stays() {
+        let mut w = world_with(&[]);
+        w.step(&[BOMB]);
+        w.step(&[BOMB]);
+        assert!(!w.bombs().next().unwrap().flying);
+    }
+
+    #[test]
+    fn thrown_bomb_stops_at_a_wall() {
+        let mut w = world_with(&[(7, 5, '*')]);
+        w.bombers[0].gloves = 1;
+        w.step(&[BOMB]);
+        w.step(&[BOMB]);
+        for _ in 0..70 {
+            w.step(&[]);
+        }
+        let b = w.bombs().next().unwrap();
+        assert!(!b.flying);
+        assert!(b.get_x() + 39 < 7 * 40, "x={}", b.get_x());
+    }
+
+    #[test]
+    fn thrown_bomb_hops_over_another_bomb() {
+        let mut w = world_with(&[]);
+        w.bombers[0].gloves = 1;
+        let mut other = Bomb::new(9, 5, 1, 1);
+        other.countdown = 100.0;
+        w.objects.push(Object::Bomb(other));
+        w.step(&[BOMB]);
+        w.step(&[BOMB]);
+        for _ in 0..140 {
+            w.step(&[]);
+        }
+        // Aterriza en la casilla 9 (ocupada) y rebota una más hasta la 10.
+        let xs: Vec<i32> = w.bombs().map(|b| b.get_x()).collect();
+        assert!(xs.contains(&(9 * 40)) && xs.contains(&(10 * 40)), "{xs:?}");
+    }
+
+    #[test]
+    fn walking_into_a_hole_kills_after_a_second() {
+        let mut w = world_with(&[(7, 5, '-')]);
+        w.bombers[0] = Bomber::new(6 * 40, 5 * 40);
+        for _ in 0..30 {
+            w.step(&[RIGHT]);
+        }
+        assert!(w.bombers[0].is_falling(), "cae al pisar el hueco");
+        assert!(!w.bombers[0].dead);
+        for _ in 0..120 {
+            w.step(&[]);
+        }
+        assert!(w.bombers[0].dead);
+    }
+
+    #[test]
+    fn bomb_in_a_hole_falls_and_is_removed() {
+        let mut w = world_with(&[(7, 5, '-')]);
+        let mut b = Bomb::new(7, 5, 1, 0);
+        b.countdown = 100.0;
+        w.objects.push(Object::Bomb(b));
+        for _ in 0..90 {
+            w.step(&[]);
+        }
+        assert_eq!(w.bombs().count(), 0);
     }
 }
