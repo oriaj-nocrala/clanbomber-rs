@@ -12,6 +12,8 @@ const MAX_PARTICLES: u32 = 16384;
 const MAX_EMITTERS: usize = 256;
 /// El bloom trabaja a media resolución virtual, sea cual sea el tamaño de la ventana.
 const BLOOM_SIZE: (u32, u32) = (400, 300);
+/// Ondas expansivas por fotograma (tamaño del array en `post.wgsl`).
+pub(crate) const MAX_WAVES: usize = 16;
 
 /// Qué efectos están activos (opciones gráficas del jugador).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -21,6 +23,10 @@ pub struct Effects {
     pub particles: bool,
     /// Explosiones procedurales en vez de los sprites.
     pub fire: bool,
+    /// Ondas expansivas que deforman la imagen.
+    pub shockwaves: bool,
+    /// Estelas a mucha velocidad, brillo del hielo y tinte de enfermedad.
+    pub sprite_fx: bool,
 }
 
 impl Default for Effects {
@@ -30,6 +36,8 @@ impl Default for Effects {
             crt: false,
             particles: true,
             fire: true,
+            shockwaves: true,
+            sprite_fx: true,
         }
     }
 }
@@ -319,6 +327,10 @@ struct PostParams {
     crt: f32,
     aberration: f32,
     time: f32,
+    waves: u32,
+    _pad: [u32; 3],
+    /// Por onda: centro (px virtuales), progreso 0..1 y fuerza.
+    wave: [[f32; 4]; MAX_WAVES],
 }
 
 fn texture(
@@ -600,7 +612,17 @@ impl Post {
         }
     }
 
-    pub fn set_params(&self, queue: &wgpu::Queue, effects: Effects, shake: f32, time: f32) {
+    pub fn set_params(
+        &self,
+        queue: &wgpu::Queue,
+        effects: Effects,
+        shake: f32,
+        time: f32,
+        waves: &[[f32; 4]],
+    ) {
+        let mut wave = [[0.0; 4]; MAX_WAVES];
+        let n = waves.len().min(MAX_WAVES);
+        wave[..n].copy_from_slice(&waves[..n]);
         let bloom = if effects.bloom && self.has_compute() {
             0.9
         } else {
@@ -615,6 +637,9 @@ impl Post {
                 // Unos 2 px virtuales de separación de canales mientras tiembla.
                 aberration: shake * 2.0 / 800.0,
                 time,
+                waves: n as u32,
+                _pad: [0; 3],
+                wave,
             }),
         );
     }
@@ -691,5 +716,17 @@ mod tests {
         assert_eq!(size("Particle"), super::PARTICLE_BYTES as usize);
         assert_eq!(size("Emitter"), std::mem::size_of::<super::GpuEmitter>());
         assert_eq!(size("Params"), std::mem::size_of::<super::SimParams>());
+
+        let src = include_str!("post.wgsl");
+        let module = naga::front::wgsl::parse_str(src).unwrap();
+        let (h, _) = module
+            .types
+            .iter()
+            .find(|(_, t)| t.name.as_deref() == Some("Post"))
+            .unwrap();
+        assert_eq!(
+            module.types[h].inner.size(module.to_ctx()) as usize,
+            std::mem::size_of::<super::PostParams>()
+        );
     }
 }

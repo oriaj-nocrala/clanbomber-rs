@@ -13,6 +13,8 @@ pub struct Video {
     pub particles: bool,
     pub crt: bool,
     pub fire: bool,
+    pub shockwaves: bool,
+    pub sprite_fx: bool,
 }
 
 impl Default for Video {
@@ -23,6 +25,8 @@ impl Default for Video {
             particles: e.particles,
             crt: e.crt,
             fire: e.fire,
+            shockwaves: e.shockwaves,
+            sprite_fx: e.sprite_fx,
         }
     }
 }
@@ -51,6 +55,8 @@ impl Video {
                 "particles" => v.particles = n != 0,
                 "crt" => v.crt = n != 0,
                 "fire" => v.fire = n != 0,
+                "shockwaves" => v.shockwaves = n != 0,
+                "sprite_fx" => v.sprite_fx = n != 0,
                 _ => {}
             }
         }
@@ -65,11 +71,13 @@ impl Video {
         std::fs::write(
             path,
             format!(
-                "bloom={}\nparticles={}\ncrt={}\nfire={}\n",
+                "bloom={}\nparticles={}\ncrt={}\nfire={}\nshockwaves={}\nsprite_fx={}\n",
                 b(self.bloom),
                 b(self.particles),
                 b(self.crt),
-                b(self.fire)
+                b(self.fire),
+                b(self.shockwaves),
+                b(self.sprite_fx)
             ),
         )
     }
@@ -80,6 +88,8 @@ impl Video {
             crt: self.crt,
             particles: self.particles,
             fire: self.fire,
+            shockwaves: self.shockwaves,
+            sprite_fx: self.sprite_fx,
         }
     }
 
@@ -90,6 +100,8 @@ impl Video {
             Id::Particles => self.particles as i32,
             Id::Crt => self.crt as i32,
             Id::FireShader => self.fire as i32,
+            Id::Shockwaves => self.shockwaves as i32,
+            Id::SpriteFx => self.sprite_fx as i32,
             _ => return None,
         })
     }
@@ -101,6 +113,8 @@ impl Video {
             Id::Particles => self.particles = v != 0,
             Id::Crt => self.crt = v != 0,
             Id::FireShader => self.fire = v != 0,
+            Id::Shockwaves => self.shockwaves = v != 0,
+            Id::SpriteFx => self.sprite_fx = v != 0,
             _ => return false,
         }
         true
@@ -120,6 +134,8 @@ mod tests {
             particles: true,
             crt: true,
             fire: false,
+            shockwaves: true,
+            sprite_fx: false,
         };
         v.save(&path).unwrap();
         assert_eq!(Video::load(&path), v);

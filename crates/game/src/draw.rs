@@ -2,7 +2,9 @@
 //! Todo en el lienzo virtual de 800x600, con las coordenadas y el orden del original.
 
 use cb_core::bomb::EXPLOSION_PERIOD;
-use cb_core::{Dir, Map, Object, Phase, Tile, World, MAP_HEIGHT, MAP_WIDTH, TICK_HZ, TILE_PIXELS};
+use cb_core::{
+    Dir, DiseaseKind, Map, Object, Phase, Tile, World, MAP_HEIGHT, MAP_WIDTH, TICK_HZ, TILE_PIXELS,
+};
 use cb_render::{Align, Fire, Renderer, Sheet};
 
 use crate::assets::Assets;
@@ -29,11 +31,43 @@ pub fn srgb_rgba(r: u8, g: u8, b: u8, a: u8) -> [f32; 4] {
     [lin(r), lin(g), lin(b), a as f32 / 255.0]
 }
 
+/// Color de la estela de cada aspecto (el de sus bombas en `bombs.png`, algo más vivo).
+const SKIN_COLORS: [(u8, u8, u8); 8] = [
+    (150, 200, 90),
+    (200, 215, 235),
+    (150, 90, 255),
+    (255, 60, 50),
+    (220, 40, 60),
+    (60, 120, 255),
+    (255, 220, 60),
+    (70, 230, 90),
+];
+
+/// Copia fantasma de un bomber rápido: posición de dibujo, celda y edad en segundos.
+struct Ghost {
+    x: f32,
+    y: f32,
+    cell: u32,
+    age: f32,
+}
+
+/// Cada cuánto deja una copia y cuánto dura (segundos).
+const GHOST_EVERY: f32 = 1.0 / 40.0;
+const GHOST_LIFE: f32 = 0.2;
+
 /// Estado de la interfaz que no vive en el mundo.
 pub struct Ui {
     /// `pokal_scroll_in` del marcador: la copa entra desde la derecha (800 → 100).
     pub scroll_in: f32,
     was_scores: bool,
+    /// Estelas de los bombers rápidos (una lista por bomber) y tiempo hasta la próxima copia.
+    trails: Vec<Vec<Ghost>>,
+    ghost_timer: f32,
+}
+
+/// Un bomber deja estela con al menos dos patines o con la enfermedad de velocidad.
+fn is_fast(b: &cb_core::Bomber) -> bool {
+    b.speed >= 170 || b.disease.is_some_and(|d| d.kind == DiseaseKind::Fast)
 }
 
 impl Ui {
@@ -41,6 +75,42 @@ impl Ui {
         Ui {
             scroll_in: 800.0,
             was_scores: false,
+            trails: Vec::new(),
+            ghost_timer: 0.0,
+        }
+    }
+
+    /// Envejece las estelas `dt` segundos de juego y deja copias de los bombers rápidos que se
+    /// mueven.
+    pub fn update_trails(&mut self, world: &World, dt: f32, skins: &[f32]) {
+        self.trails.resize_with(world.bombers.len(), Vec::new);
+        for t in &mut self.trails {
+            t.iter_mut().for_each(|g| g.age += dt);
+            t.retain(|g| g.age < GHOST_LIFE);
+        }
+        self.ghost_timer -= dt;
+        if self.ghost_timer > 0.0 || dt <= 0.0 {
+            return;
+        }
+        self.ghost_timer = GHOST_EVERY;
+        for ((b, t), &offset_y) in world.bombers.iter().zip(&mut self.trails).zip(skins) {
+            if b.dead || b.is_falling() || b.flight.active || !is_fast(b) {
+                continue;
+            }
+            let (x, y) = (
+                b.get_x() as f32 + BOMBER_OFFSET_X,
+                b.get_y() as f32 + offset_y,
+            );
+            // Solo si se ha movido desde la última copia.
+            if t.last().is_some_and(|g| g.x == x && g.y == y) {
+                continue;
+            }
+            t.push(Ghost {
+                x,
+                y,
+                cell: b.sprite_nr(),
+                age: 0.0,
+            });
         }
     }
 
@@ -120,7 +190,7 @@ fn draw_falling(
 
 pub fn draw(r: &mut Renderer, a: &Assets, w: &World, ui: &Ui, players: &[Player], paused: bool) {
     match w.phase {
-        Phase::Playing => draw_game(r, a, w, players),
+        Phase::Playing => draw_game(r, a, w, ui, players),
         Phase::Scores {
             winner,
             end_of_game,
@@ -166,7 +236,8 @@ fn tile_cells(map: &Map, x: i32, y: i32) -> Option<(u32, Option<u32>)> {
     })
 }
 
-fn draw_game(r: &mut Renderer, a: &Assets, w: &World, players: &[Player]) {
+fn draw_game(r: &mut Renderer, a: &Assets, w: &World, ui: &Ui, players: &[Player]) {
+    let sprite_fx = r.effects().sprite_fx;
     // Tema visual (0..6): cada tema ocupa 4 celdas en maptiles.png.
     let theme = w.config.theme.clamp(0, 5) as u32;
     let t = TILE_PIXELS as f32;
@@ -223,6 +294,9 @@ fn draw_game(r: &mut Renderer, a: &Assets, w: &World, players: &[Player]) {
                     r.sheet_sprite(&a.maptiles, theme * 4 + base, px, py);
                     if let Some(ad) = addon {
                         r.sheet_sprite(&a.addons, ad, px, py);
+                    }
+                    if sprite_fx && w.map.get(x, y) == Tile::Ice {
+                        r.ice_shine([px, py, t, t], 1.0);
                     }
                 }
             }
@@ -295,6 +369,16 @@ fn draw_game(r: &mut Renderer, a: &Assets, w: &World, players: &[Player]) {
         r.sheet_sprite(&a.extras, e.kind as u32, ox + e.x, oy + e.y);
     }
     let fire_shader = r.effects().fire;
+    for e in w.explosions() {
+        // Onda expansiva: más rápida que el fuego (acaba a mitad de la explosión) y más fuerte
+        // cuanto mayor la potencia.
+        let (cx, cy) = at(e.tx, e.ty);
+        let progress = (1.0 - e.period / EXPLOSION_PERIOD) * 1.8;
+        if progress < 1.0 {
+            let strength = (0.6 + 0.08 * e.power as f32).min(1.4);
+            r.shockwave([cx + t / 2.0, cy + t / 2.0], progress, strength);
+        }
+    }
     for e in w.explosions().filter(|_| fire_shader) {
         // Explosión procedural: el grosor sale de la potencia de la bomba.
         let (cx, cy) = at(e.tx, e.ty);
@@ -350,6 +434,26 @@ fn draw_game(r: &mut Renderer, a: &Assets, w: &World, players: &[Player]) {
         let cell = players[b.owner].skin as u32 * 4 + b.frame();
         r.sheet_sprite(&a.bombs, cell, ox + b.x, oy + b.y);
     }
+    // Estelas de los bombers rápidos: siluetas de su color que se apagan (brillan con el bloom).
+    if sprite_fx {
+        for ((trail, b), p) in ui.trails.iter().zip(&w.bombers).zip(players) {
+            if b.dead {
+                continue;
+            }
+            let skin = &a.skins[p.skin];
+            let (cr, cg, cb) = SKIN_COLORS[p.skin % SKIN_COLORS.len()];
+            let c = srgb_rgba(cr, cg, cb, 255);
+            for g in trail {
+                let fade = 1.0 - g.age / GHOST_LIFE;
+                r.sprite_silhouette(
+                    skin.sheet.tex,
+                    skin.sheet.cell(g.cell),
+                    [g.x, g.y, skin.sheet.cell_w, skin.sheet.cell_h],
+                    [c[0] * 1.6, c[1] * 1.6, c[2] * 1.6, 0.55 * fade * fade],
+                );
+            }
+        }
+    }
     // Un bomber enfermo pulsa (Bomber::show): 2π cada ~314 ms (Timer::get_time() / 50).
     let ms = w.tick as f64 * 1000.0 / TICK_HZ as f64;
     let pulse = ((ms / 50.0) % (2.0 * std::f64::consts::PI)).sin() as f32 * 0.15 + 1.0;
@@ -366,6 +470,20 @@ fn draw_game(r: &mut Renderer, a: &Assets, w: &World, players: &[Player]) {
             draw_flying(r, &skin.sheet, b.sprite_nr(), pos, b.flight.scale(), 1.0);
         } else if b.is_diseased() {
             let pos = (ox + b.get_x() as f32, oy + b.get_y() as f32);
+            let stoned = b.disease.is_some_and(|d| d.kind == DiseaseKind::Stoned);
+            if sprite_fx && stoned {
+                // Joint: el bomber cambia de color en ciclo (además de pulsar).
+                let x = (20.0 + pos.0 - 20.0 * pulse).trunc();
+                let y = (pos.1 + 20.0 + (-40.0 + skin.offset_y) * pulse - 20.0 * pulse).trunc();
+                let sheet = &skin.sheet;
+                r.sprite_hue(
+                    sheet.tex,
+                    sheet.cell(b.sprite_nr()),
+                    [x, y, sheet.cell_w * pulse, sheet.cell_h * pulse],
+                    0.85,
+                );
+                continue;
+            }
             draw_scaled(
                 r,
                 &skin.sheet,

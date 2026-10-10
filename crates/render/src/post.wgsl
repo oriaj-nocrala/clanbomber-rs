@@ -6,6 +6,12 @@ struct Post {
     crt: f32,
     aberration: f32,
     time: f32,
+    waves: u32,
+    _pad0: u32,
+    _pad1: u32,
+    _pad2: u32,
+    // Por onda: centro (px virtuales), progreso 0..1 y fuerza.
+    wave: array<vec4<f32>, 16>,
 };
 
 @group(0) @binding(0) var scene: texture_2d<f32>;
@@ -38,9 +44,32 @@ fn sample_scene(uv: vec2<f32>) -> vec3<f32> {
     );
 }
 
+// Ondas expansivas: un anillo que crece desde cada explosión, empuja la imagen hacia fuera y
+// aclara un poco su frente. Devuelve el desplazamiento en uv (xy) y el brillo extra (z).
+fn shockwaves(uv: vec2<f32>) -> vec3<f32> {
+    let virt = vec2<f32>(800.0, 600.0);
+    let p = uv * virt;
+    var offset = vec2<f32>(0.0);
+    var glow = 0.0;
+    for (var i = 0u; i < post.waves; i++) {
+        let w = post.wave[i];
+        let d = p - w.xy;
+        let dist = length(d);
+        let radius = mix(8.0, 80.0 + 50.0 * w.w, sqrt(w.z));
+        let ring = (dist - radius) / 20.0;
+        // Perfil: seno dentro de una campana, positivo por fuera y negativo por dentro.
+        let bell = exp(-ring * ring * 1.5);
+        let fade = 1.0 - w.z;
+        offset += d / max(dist, 1.0) * sin(ring * 3.14159) * bell * 8.0 * w.w * fade;
+        glow += bell * 0.12 * w.w * fade;
+    }
+    return vec3<f32>(offset / virt, glow);
+}
+
 @fragment
 fn fs(in: VsOut) -> @location(0) vec4<f32> {
-    var uv = in.uv;
+    let wave = shockwaves(in.uv);
+    var uv = in.uv - wave.xy;
     if post.crt > 0.0 {
         // Curvatura de tubo: los bordes se doblan hacia fuera.
         let c = uv * 2.0 - 1.0;
@@ -49,6 +78,7 @@ fn fs(in: VsOut) -> @location(0) vec4<f32> {
     // Fuera del tubo, negro (sin `return` temprano: textureSample exige control uniforme).
     let inside = f32(all(uv >= vec2<f32>(0.0)) && all(uv <= vec2<f32>(1.0)));
     var color = sample_scene(uv) + textureSample(bloom_tex, linear, uv).rgb * post.bloom;
+    color *= 1.0 + wave.z;
     if post.crt > 0.0 {
         // Líneas de barrido a la resolución del original (600 líneas) y viñeta.
         let line = 0.5 + 0.5 * cos(uv.y * 600.0 * 6.2831853);
