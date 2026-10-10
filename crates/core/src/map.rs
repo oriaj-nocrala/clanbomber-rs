@@ -316,6 +316,8 @@ impl Map {
 pub struct MapList {
     pub paths: Vec<std::path::PathBuf>,
     pub index: usize,
+    /// Mapas desmarcados: se saltan al pasar de ronda (`MapEntry::is_enabled`).
+    pub disabled: Vec<String>,
 }
 
 impl MapList {
@@ -325,7 +327,11 @@ impl MapList {
             .filter(|p| p.extension().is_some_and(|x| x == "map"))
             .collect();
         paths.sort_by_key(|p| p.file_stem().map(|s| s.to_string_lossy().to_lowercase()));
-        Ok(MapList { paths, index: 0 })
+        Ok(MapList {
+            paths,
+            index: 0,
+            disabled: Vec::new(),
+        })
     }
 
     pub fn current(&self) -> Result<Map, MapError> {
@@ -335,7 +341,11 @@ impl MapList {
     /// `Map::load_random_valid`: salta a un mapa al azar donde caben `players` jugadores.
     pub fn random_for(&mut self, players: usize, rng: &mut Rng) -> Result<Map, MapError> {
         let valid: Vec<usize> = (0..self.paths.len())
-            .filter(|&i| Map::load(&self.paths[i]).is_ok_and(|m| m.max_players as usize >= players))
+            .filter(|&i| {
+                Map::load(&self.paths[i]).is_ok_and(|m| {
+                    m.max_players as usize >= players && !self.disabled.contains(&m.name)
+                })
+            })
             .collect();
         if let Some(&i) = valid.get(rng.below(valid.len().max(1) as u32) as usize) {
             self.index = i;
@@ -349,7 +359,7 @@ impl MapList {
         for _ in 0..self.paths.len() {
             self.index = (self.index + 1) % self.paths.len();
             let map = self.current()?;
-            if map.max_players as usize >= players {
+            if map.max_players as usize >= players && !self.disabled.contains(&map.name) {
                 return Ok(map);
             }
         }

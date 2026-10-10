@@ -1670,4 +1670,23 @@ mod tests {
         }
         assert!(seen.len() > 1, "no siempre el mismo");
     }
+
+    #[test]
+    fn disabled_maps_are_skipped() {
+        let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../../assets/maps");
+        let mut list = crate::MapList::scan(dir).unwrap();
+        let first = list.current().unwrap().name;
+        let second_name = {
+            let mut probe = list.clone();
+            probe.next_for(2).unwrap().name
+        };
+        list.disabled.push(second_name.clone());
+        let next = list.next_for(2).unwrap();
+        assert_ne!(next.name, second_name);
+        assert_ne!(next.name, first);
+        let mut rng = crate::Rng::new(3);
+        for _ in 0..30 {
+            assert_ne!(list.random_for(2, &mut rng).unwrap().name, second_name);
+        }
+    }
 }

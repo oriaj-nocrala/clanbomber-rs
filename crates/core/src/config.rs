@@ -98,6 +98,8 @@ pub struct Config {
     pub bomb_delay: i32,
     /// Píxeles por segundo de una bomba pateada.
     pub bomb_speed: i32,
+    /// Nombres de los mapas que el jugador ha desmarcado en la selección de mapas.
+    pub disabled_maps: Vec<String>,
     pub bombers: Vec<BomberConfig>,
 }
 
@@ -138,6 +140,7 @@ impl Default for Config {
             bomb_countdown: 25,
             bomb_delay: 10,
             bomb_speed: 160,
+            disabled_maps: Vec::new(),
             bombers: (0..MAX_PLAYERS)
                 .map(|i| BomberConfig {
                     skin: i as u8,
@@ -234,6 +237,9 @@ impl Config {
         put("bomb_countdown", self.bomb_countdown.to_string());
         put("bomb_delay", self.bomb_delay.to_string());
         put("bomb_speed", self.bomb_speed.to_string());
+        for name in &self.disabled_maps {
+            put("disabled_map", name.clone());
+        }
         for (i, p) in self.bombers.iter().enumerate() {
             put(&format!("bomber{i}.skin"), p.skin.to_string());
             put(&format!("bomber{i}.name"), p.name.clone());
@@ -292,6 +298,7 @@ impl Config {
                 "bomb_countdown" => set!(bomb_countdown, int()),
                 "bomb_delay" => set!(bomb_delay, int()),
                 "bomb_speed" => set!(bomb_speed, int()),
+                "disabled_map" if !v.is_empty() => c.disabled_maps.push(v.to_owned()),
                 _ => {
                     // bomber{i}.{campo}
                     let Some(rest) = k.strip_prefix("bomber") else {
@@ -396,6 +403,7 @@ mod tests {
         c.bombers[3].team = 2;
         c.bombers[3].controller = ControllerKind::Joystick(2);
         c.bombers[4].enabled = true;
+        c.disabled_maps = vec!["Arena".into(), "Big Block".into()];
         assert_eq!(Config::from_text(&c.to_text()), c);
     }
 
