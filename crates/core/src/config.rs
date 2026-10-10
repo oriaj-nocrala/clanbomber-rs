@@ -15,7 +15,6 @@ pub enum ControllerKind {
     Ai,
     /// Teclado 1 (flechas + Enter), 2 (WASD + Tab) o 3 (IJKL + Espacio).
     Keymap(u8),
-    RcMouse,
     Joystick(u8),
 }
 
@@ -24,7 +23,6 @@ impl ControllerKind {
         match self {
             ControllerKind::Ai => "ai".into(),
             ControllerKind::Keymap(n) => format!("keymap{n}"),
-            ControllerKind::RcMouse => "rcmouse".into(),
             ControllerKind::Joystick(n) => format!("joystick{n}"),
         }
     }
@@ -32,10 +30,9 @@ impl ControllerKind {
     fn from_str(s: &str) -> Option<Self> {
         Some(match s {
             "ai" => ControllerKind::Ai,
-            // La segunda IA del original ("AI_mass") no se portó: las configuraciones que la
-            // nombran pasan a la IA que tenemos.
-            "ai_mass" => ControllerKind::Ai,
-            "rcmouse" => ControllerKind::RcMouse,
+            // Lo que el original tenía y no se portó (la segunda IA "AI_mass" y el controlador de
+            // ratón): las configuraciones que lo nombran pasan a la IA que tenemos.
+            "ai_mass" | "rcmouse" => ControllerKind::Ai,
             _ => {
                 if let Some(n) = s.strip_prefix("keymap") {
                     ControllerKind::Keymap(n.parse().ok().filter(|n| (1..=3).contains(n))?)
@@ -450,8 +447,9 @@ mod tests {
     }
 
     #[test]
-    fn old_configs_naming_the_dropped_second_ai_fall_back_to_the_normal_one() {
-        let c = Config::from_text("bomber3.controller=ai_mass");
+    fn old_configs_naming_dropped_controllers_fall_back_to_the_normal_ai() {
+        let c = Config::from_text("bomber3.controller=ai_mass\nbomber4.controller=rcmouse");
         assert_eq!(c.bombers[3].controller, ControllerKind::Ai);
+        assert_eq!(c.bombers[4].controller, ControllerKind::Ai);
     }
 }

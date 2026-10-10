@@ -80,5 +80,5 @@ enum (`CurrentSurfaceTexture`), `VertexState.buffers` es `&[Option<_>]`, `bind_g
    → IA hecha (`ai.rs`, port de Controller_AI; la segunda IA del original, AI_mass, no se portó a propósito). Sonido hecho (efectos con rodio y
    música `.mod` con libopenmpt; F2 la activa, P pausa), cadáveres, trozos, sangre en los créditos y
    temblor de explosiones. Equipos hechos (rondas por equipo, marcador de equipos, la IA no vuela a compañeros). Mandos hechos (gilrs: stick o cruceta + botón A).
-   Pendiente: el controlador de ratón (RCMOUSE; queda quieto).
+   No se portaron a propósito la segunda IA (AI_mass) ni el controlador de ratón (RCMOUSE).
 6. Partículas (compute), sprites con IA.

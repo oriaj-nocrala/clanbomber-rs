@@ -14,12 +14,11 @@ const COLS: usize = 4;
 /// Límites de las columnas en píxeles (`cg` del original).
 const COL_EDGES: [f32; 5] = [17.0, 95.0, 340.0, 500.0, 720.0];
 /// Controladores que se recorren con Enter (sin joysticks detectados: `6 + count`).
-const CONTROLLERS: [ControllerKind; 5] = [
+const CONTROLLERS: [ControllerKind; 4] = [
     ControllerKind::Ai,
     ControllerKind::Keymap(1),
     ControllerKind::Keymap(2),
     ControllerKind::Keymap(3),
-    ControllerKind::RcMouse,
 ];
 const MAX_NAME: usize = 14;
 
@@ -92,7 +91,7 @@ impl PlayerSetup {
                     1 => self.edit = Some(TextEdit::new(&b.name)),
                     2 => b.team = (b.team + 1) % 5,
                     _ => {
-                        // `controller % (5 + joysticks)`: los cinco fijos y luego cada mando.
+                        // `controller % (4 + joysticks)`: los cuatro fijos y luego cada mando.
                         let all: Vec<ControllerKind> = CONTROLLERS
                             .iter()
                             .copied()
@@ -200,16 +199,6 @@ impl PlayerSetup {
                 }
                 ControllerKind::Keymap(n) => {
                     r.sheet_sprite(&a.ps_controls, n as u32, 550.0, y + 2.0)
-                }
-                ControllerKind::RcMouse => {
-                    r.text(
-                        &a.font_small,
-                        "RCMOUSE",
-                        612.0,
-                        110.0 + i as f32 * 63.0,
-                        col,
-                        Align::Center,
-                    );
                 }
                 ControllerKind::Joystick(n) => {
                     r.sheet_sprite(&a.ps_controls, 4, 550.0, y + 2.0);
@@ -329,7 +318,7 @@ mod tests {
     #[test]
     fn connected_joysticks_join_the_controller_cycle() {
         let mut c = Config::default();
-        c.bombers[0].controller = ControllerKind::RcMouse;
+        c.bombers[0].controller = ControllerKind::Keymap(3);
         let mut s = PlayerSetup::new();
         for _ in 0..3 {
             s.key(KeyCode::ArrowRight, None, &mut c, 2);
@@ -344,8 +333,8 @@ mod tests {
             ControllerKind::Ai,
             "vuelta al principio"
         );
-        // Sin mandos, tras el ratón se vuelve directamente a la IA.
-        c.bombers[0].controller = ControllerKind::RcMouse;
+        // Sin mandos, tras el último teclado se vuelve directamente a la IA.
+        c.bombers[0].controller = ControllerKind::Keymap(3);
         s.key(KeyCode::Enter, None, &mut c, 0);
         assert_eq!(c.bombers[0].controller, ControllerKind::Ai);
     }

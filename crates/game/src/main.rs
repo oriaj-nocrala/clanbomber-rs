@@ -69,8 +69,8 @@ const KEYMAPS: [[KeyCode; 5]; 3] = [
 enum Control {
     Keys(usize),
     Pad(usize),
-    /// Sin controlador implementado (ratón): se queda quieto.
-    None,
+    /// La decide la IA dentro del mundo; aquí no hay teclas.
+    Ai,
 }
 
 enum Screen {
@@ -195,8 +195,8 @@ impl App {
                 ControllerKind::Keymap(n) => Control::Keys(n as usize - 1),
                 // `Joystick(n)` es el n-ésimo mando (desde 1), como se enseña en Player Setup.
                 ControllerKind::Joystick(n) => Control::Pad((n as usize).saturating_sub(1)),
-                // La IA va aparte (`World::ais`). TODO(ratón): sin controlador todavía.
-                _ => Control::None,
+                // La IA va aparte (`World::ais`).
+                ControllerKind::Ai => Control::Ai,
             })
             .collect();
         self.players = players
@@ -246,7 +246,7 @@ impl App {
         self.controls
             .iter()
             .map(|c| match *c {
-                Control::None => Input::default(),
+                Control::Ai => Input::default(),
                 Control::Pad(i) => pads.input(i),
                 Control::Keys(i) => {
                     let k = &KEYMAPS[i];
