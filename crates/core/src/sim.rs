@@ -1,7 +1,7 @@
 use crate::bomb::{Bomb, Explosion, Object};
 use crate::bomber::{Action, Bomber, Input};
 use crate::extra::{roll_extra, Extra, ExtraConfig, ExtraKind};
-use crate::map::{Dir, Map, MapList, Tile, MAP_HEIGHT, MAP_WIDTH, TILE_PIXELS};
+use crate::map::{Dir, Map, MapList, Tile, MAP_HEIGHT, MAP_WIDTH};
 use crate::movement::{advance, Env, Mover, Pos};
 use crate::rng::Rng;
 use crate::round::{Observer, Phase, POINTS_TO_WIN, ROUND_TIME};
@@ -151,18 +151,6 @@ impl World {
     pub(crate) fn set_map(&mut self, map: Map) {
         self.arrows = Self::arrows_for(&map);
         self.map = map;
-    }
-
-    /// Crea un bomber por cada una de las primeras `n` posiciones de salida del mapa.
-    pub fn spawn_bombers(&mut self, n: usize) {
-        let t = TILE_PIXELS as i32;
-        self.bombers = self
-            .map
-            .spawns
-            .iter()
-            .take(n)
-            .map(|&(_, x, y)| Bomber::new(x as i32 * t, y as i32 * t))
-            .collect();
     }
 
     pub fn bomb_at(&self, tx: i32, ty: i32) -> bool {

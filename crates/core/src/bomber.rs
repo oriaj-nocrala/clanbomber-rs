@@ -315,6 +315,10 @@ impl Bomber {
 
     /// Índice de sprite: `cur_dir * 10 + (int)anim_count`.
     pub fn sprite_nr(&self) -> u32 {
+        // Un bomber muerto se queda en la pose de caído (`Bomber::die`: `cur_dir*10+9`).
+        if self.dead {
+            return self.dir.index() * 10 + 9;
+        }
         self.dir.index() * 10 + self.anim_count as u32
     }
 
