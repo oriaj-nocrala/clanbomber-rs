@@ -2,6 +2,7 @@ use crate::ai::{Ai, AiView};
 use crate::bomb::{Bomb, Explosion, Object};
 use crate::bomber::{Action, Bomber, Input};
 use crate::config::Config;
+use crate::events::GameEvent;
 use crate::extra::{roll_extra, Extra, ExtraKind};
 use crate::map::{Dir, Map, MapList, Tile, MAP_HEIGHT, MAP_WIDTH};
 use crate::movement::{advance, Env, Mover, Pos};
@@ -28,6 +29,8 @@ pub struct World {
     pub(crate) trapped: Vec<Trapped>,
     /// IA de cada bomber (`None`: lo controla una persona).
     pub ais: Vec<Option<Ai>>,
+    pub(crate) events: Vec<GameEvent>,
+    pub(crate) hurry_played: bool,
     /// Reglas de partida (reloj, ganador, rondas); las pruebas sueltas las dejan apagadas.
     pub(crate) rounds_enabled: bool,
     pub round_time: f32,
@@ -121,6 +124,8 @@ impl World {
             arrows: Self::arrows_for(&map),
             trapped: Vec::new(),
             ais: Vec::new(),
+            events: Vec::new(),
+            hurry_played: false,
             rounds_enabled: false,
             round_time: config.round_time as f32,
             observer: Observer::new(),
@@ -135,6 +140,11 @@ impl World {
             rng,
             config,
         }
+    }
+
+    /// Sucesos sonoros desde la última llamada (quien dibuja o suena los consume).
+    pub fn take_events(&mut self) -> Vec<GameEvent> {
+        std::mem::take(&mut self.events)
     }
 
     /// Pone (o quita) la IA de un bomber.
@@ -508,6 +518,8 @@ impl World {
     /// casilla libre al azar.
     fn flush_drops(&mut self) {
         for k in 0..self.bombers.len() {
+            let events = std::mem::take(&mut self.bombers[k].events);
+            self.events.extend(events);
             for (kind, x, y) in std::mem::take(&mut self.bombers[k].drops) {
                 let mut e = Extra::new(x, y, kind);
                 if let Some(t) = self.get_passable() {
@@ -575,6 +587,9 @@ impl World {
         for o in self.objects.iter_mut() {
             match o {
                 Object::Bomb(b) if !b.flight.active && self.map.is_hole(b.tile().0, b.tile().1) => {
+                    if !b.falling {
+                        self.events.push(GameEvent::DeepFall);
+                    }
                     b.fall()
                 }
                 Object::Extra(e) if self.map.is_hole(e.tile().0, e.tile().1) => e.fall(),
@@ -590,6 +605,7 @@ impl World {
             return;
         }
         let power = self.bombers[owner].power;
+        self.events.push(GameEvent::PutBomb);
         self.bombers[owner].cur_bombs -= 1;
         self.objects.push(Object::Bomb(Bomb::with_config(
             tx,
@@ -644,6 +660,12 @@ impl World {
         {
             // Todo extra cura primero la enfermedad que hubiera (y suelta su extra).
             b.loose_disease();
+            self.events.push(match kind {
+                ExtraKind::Joint => GameEvent::Joint,
+                ExtraKind::Viagra => GameEvent::Horny,
+                ExtraKind::Koks => GameEvent::Schnief,
+                _ => GameEvent::Wow,
+            });
             match kind {
                 ExtraKind::Bomb => b.gain_extra_bomb(cfg),
                 ExtraKind::Power => b.gain_extra_power(cfg),
@@ -761,6 +783,7 @@ impl World {
                 .iter()
                 .any(|o| matches!(o, Object::Extra(e) if e.rests_on_tile() && e.tile() == (tx, ty)))
         };
+        self.events.push(GameEvent::Explode);
         let e = Explosion::new(&mut self.map, &has_extra, x, y, power, owner);
         // MapTile::destroy(): las casillas alcanzadas destruyen los extras que hay en ellas.
         for i in self.extras_where(|t| e.destroyed_tiles.contains(&t)) {
@@ -1834,5 +1857,88 @@ mod tests {
             finished_rounds >= 3,
             "las rondas terminan solas: {finished_rounds}"
         );
+    }
+
+    // ---- Sucesos sonoros ----
+
+    #[test]
+    fn placing_exploding_and_picking_up_emit_events() {
+        let mut w = open_world();
+        put_extra(&mut w, ExtraKind::Power, 5, 5);
+        w.step(&[BOMB]);
+        let ev = w.take_events();
+        assert!(
+            ev.contains(&GameEvent::PutBomb) && ev.contains(&GameEvent::Wow),
+            "{ev:?}"
+        );
+        assert!(w.take_events().is_empty(), "se vacían al leerlos");
+        for _ in 0..(2.5 * 60.0) as usize + 3 {
+            w.step(&[]);
+        }
+        let ev = w.take_events();
+        assert!(
+            ev.contains(&GameEvent::Explode) && ev.contains(&GameEvent::Die),
+            "{ev:?}"
+        );
+    }
+
+    #[test]
+    fn diseases_have_their_own_sounds() {
+        let mut w = open_world();
+        put_extra(&mut w, ExtraKind::Joint, 5, 5);
+        put_extra(&mut w, ExtraKind::Viagra, 10, 5);
+        put_extra(&mut w, ExtraKind::Koks, 10, 5);
+        w.step(&[]);
+        let ev = w.take_events();
+        assert!(ev.contains(&GameEvent::Joint));
+        assert!(ev.contains(&GameEvent::Horny) && ev.contains(&GameEvent::Schnief));
+    }
+
+    #[test]
+    fn falling_into_a_hole_is_heard_once() {
+        let mut w = world_with(&[(7, 5, '-')]);
+        w.bombers[0] = Bomber::new(6 * 40, 5 * 40);
+        for _ in 0..40 {
+            w.step(&[RIGHT]);
+        }
+        let falls = w
+            .take_events()
+            .iter()
+            .filter(|e| **e == GameEvent::DeepFall)
+            .count();
+        assert_eq!(falls, 1);
+    }
+
+    #[test]
+    fn round_events_hurry_up_time_over_crunch_and_klatsch() {
+        let mut w = match_world();
+        land(&mut w);
+        w.round_time = 21.5;
+        let mut ev = Vec::new();
+        for _ in 0..(2.0 * 60.0) as usize {
+            w.step(&[]);
+            ev.extend(w.take_events());
+        }
+        assert_eq!(
+            ev.iter().filter(|e| **e == GameEvent::HurryUp).count(),
+            1,
+            "una sola vez"
+        );
+
+        w.round_time = 0.0;
+        let mut ev = Vec::new();
+        for _ in 0..(10.0 * 60.0) as usize {
+            w.step(&[]);
+            ev.extend(w.take_events());
+        }
+        assert_eq!(ev.iter().filter(|e| **e == GameEvent::TimeOver).count(), 1);
+        assert!(ev.contains(&GameEvent::Crunch));
+
+        let mut w = match_world();
+        land(&mut w);
+        w.bombers[0].points = w.config.points_to_win - 1;
+        w.bombers[1].die();
+        w.step(&[]);
+        assert!(w.take_events().contains(&GameEvent::Klatsch));
     }
 }

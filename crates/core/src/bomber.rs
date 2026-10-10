@@ -6,6 +6,7 @@
 
 use crate::config::Config;
 use crate::disease::{Disease, DiseaseKind};
+use crate::events::GameEvent;
 use crate::extra::ExtraKind;
 use crate::flight::Flight;
 use crate::map::{Dir, TILE_PIXELS};
@@ -68,6 +69,8 @@ pub struct Bomber {
     extra_gloves: i32,
     /// Extras que este bomber ha soltado y el `World` debe colocar: (tipo, x, y en píxeles).
     pub drops: Vec<(ExtraKind, i32, i32)>,
+    /// Sucesos de este bomber (muerte, caída) que el `World` recoge.
+    pub events: Vec<GameEvent>,
 }
 
 const T: i32 = TILE_PIXELS as i32;
@@ -108,6 +111,7 @@ impl Bomber {
             extra_kick: 0,
             extra_gloves: 0,
             drops: Vec::new(),
+            events: Vec::new(),
         }
     }
 
@@ -133,6 +137,7 @@ impl Bomber {
         self.extra_kick = 0;
         self.extra_gloves = 0;
         self.drops.clear();
+        self.events.clear();
         // Config::start_* del original.
         self.skateboards = cfg.start_skateboards;
         self.speed = 90 + cfg.start_skateboards * 40;
@@ -300,6 +305,7 @@ impl Bomber {
             return false;
         }
         self.dead = true;
+        self.events.push(GameEvent::Die);
         self.deaths += 1;
         if !self.fallen_down {
             self.loose_all_extras();
@@ -336,6 +342,7 @@ impl Bomber {
         if !self.falling {
             self.falling = true;
             self.fall_countdown = 1.0;
+            self.events.push(GameEvent::DeepFall);
         }
     }
 

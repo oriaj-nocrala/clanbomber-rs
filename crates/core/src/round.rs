@@ -3,6 +3,7 @@
 
 use crate::bomb::Object;
 use crate::bomber::Bomber;
+use crate::events::GameEvent;
 use crate::flight::Flight;
 use crate::map::TILE_PIXELS;
 use crate::sim::{World, TICK_DT};
@@ -72,6 +73,7 @@ impl World {
         }
         self.round_time = self.config.round_time as f32;
         self.observer = Observer::new();
+        self.hurry_played = false;
         self.phase = Phase::Playing;
     }
 
@@ -136,13 +138,20 @@ impl World {
             }
         }
         self.round_time -= TICK_DT;
+        // Aviso de que se acaba el tiempo (se oye una vez, al entrar en los últimos 21 s).
+        if self.round_time < 21.0 && self.round_time > 18.0 && !self.hurry_played {
+            self.hurry_played = true;
+            self.events.push(GameEvent::HurryUp);
+        }
 
         if self.round_time < 0.0 && !self.observer.flight.active {
             if self.observer.first_destruction {
                 self.observer.first_destruction = false;
+                self.events.push(GameEvent::TimeOver);
             } else {
                 let (tx, ty) = self.observer.tile();
                 self.vanish_tile(tx, ty);
+                self.events.push(GameEvent::Crunch);
             }
             if let Some(t) = self.map.get_random(&mut self.rng) {
                 let dest = (t.0 as i32 * 40, t.1 as i32 * 40);
@@ -192,6 +201,9 @@ impl World {
             None => self.pristine.clone(),
         };
         self.next_map = Some(next);
+        if end_of_game {
+            self.events.push(GameEvent::Klatsch);
+        }
         self.phase = Phase::Scores {
             winner,
             end_of_game,
