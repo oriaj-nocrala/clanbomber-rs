@@ -488,64 +488,72 @@ fn draw_scores(
         Align::Center,
     );
     let title = match winner {
+        // En una partida por equipos gana el equipo del último vivo.
+        Some(i) if w.bombers[i].team != 0 => {
+            format!("{} won", TEAM_NAMES[w.bombers[i].team as usize - 1])
+        }
         Some(i) => format!("{} won", players[i].name),
         None => "Draw Game".to_owned(),
     };
     r.text(&a.font_big, &title, 500.0, 40.0, col, Align::Center);
 
-    let ms = w.tick as f64 * 1000.0 / TICK_HZ as f64;
-    for (i, (b, p)) in w.bombers.iter().zip(players).enumerate() {
-        let (sheet, off) = (&a.skins[p.skin].sheet, a.skins[p.skin].offset_y);
-        let nr = (i + 1) as f32;
-        let row_y = 150.0 + nr * 43.0;
-        r.text(
-            &a.font_big,
-            p.name.as_str(),
-            70.0,
-            157.0 + nr * 43.0,
-            col,
-            Align::Left,
-        );
-        let cup = |r: &mut Renderer, x: f32, y: f32, s: f32| {
-            r.sprite_tinted(
-                a.cup.tex,
-                a.cup.cell(0),
-                [x, y, 40.0 * s, 40.0 * s],
-                [1.0; 4],
+    if w.is_team_game() {
+        draw_team_rows(r, a, w, players, winner, end_of_game);
+    } else {
+        let ms = w.tick as f64 * 1000.0 / TICK_HZ as f64;
+        for (i, (b, p)) in w.bombers.iter().zip(players).enumerate() {
+            let (sheet, off) = (&a.skins[p.skin].sheet, a.skins[p.skin].offset_y);
+            let nr = (i + 1) as f32;
+            let row_y = 150.0 + nr * 43.0;
+            r.text(
+                &a.font_big,
+                p.name.as_str(),
+                70.0,
+                157.0 + nr * 43.0,
+                col,
+                Align::Left,
             );
-        };
-        if winner == Some(i) && !end_of_game {
-            let x = 5.0 + ((i + 1) % 2) as f32 * 20.0;
-            r.sheet_sprite(sheet, b.sprite_nr(), x, row_y - 40.0 + off);
-            for k in 0..(b.points - 1).max(0) {
-                cup(r, 300.0 + k as f32 * 43.0, row_y, 1.0);
-            }
-            cup(
-                r,
-                (257.0 + b.points as f32 * 43.0).max(ui.scroll_in),
-                row_y,
-                1.0,
-            );
-        } else if winner == Some(i) {
-            // El campeón de la partida: todo pulsa y se desliza hacia dentro.
-            let sf = (((ms / 100.0).sin() + 2.0) / 2.0) as f32;
-            let pos = (5.0 + (800.0 - ui.scroll_in) / 3.0, row_y);
-            draw_scaled(r, sheet, b.sprite_nr(), pos, off, sf, 1.0);
-            for k in 0..(b.points - 1).max(0) {
+            let cup = |r: &mut Renderer, x: f32, y: f32, s: f32| {
+                r.sprite_tinted(
+                    a.cup.tex,
+                    a.cup.cell(0),
+                    [x, y, 40.0 * s, 40.0 * s],
+                    [1.0; 4],
+                );
+            };
+            if winner == Some(i) && !end_of_game {
+                let x = 5.0 + ((i + 1) % 2) as f32 * 20.0;
+                r.sheet_sprite(sheet, b.sprite_nr(), x, row_y - 40.0 + off);
+                for k in 0..(b.points - 1).max(0) {
+                    cup(r, 300.0 + k as f32 * 43.0, row_y, 1.0);
+                }
                 cup(
                     r,
-                    320.0 + k as f32 * 43.0 - 20.0 * sf,
-                    170.0 + nr * 43.0 - 20.0 * sf,
-                    sf,
+                    (257.0 + b.points as f32 * 43.0).max(ui.scroll_in),
+                    row_y,
+                    1.0,
                 );
-            }
-            let x = (277.0 + b.points as f32 * 43.0 - 20.0 * sf).max(ui.scroll_in);
-            cup(r, x, 170.0 + nr * 43.0 - 20.0 * sf, sf);
-        } else {
-            let x = 5.0 + ((i + 1) % 2) as f32 * 20.0;
-            r.sheet_sprite(sheet, b.sprite_nr(), x, row_y - 40.0 + off);
-            for k in 0..b.points {
-                cup(r, 300.0 + k as f32 * 43.0, row_y, 1.0);
+            } else if winner == Some(i) {
+                // El campeón de la partida: todo pulsa y se desliza hacia dentro.
+                let sf = (((ms / 100.0).sin() + 2.0) / 2.0) as f32;
+                let pos = (5.0 + (800.0 - ui.scroll_in) / 3.0, row_y);
+                draw_scaled(r, sheet, b.sprite_nr(), pos, off, sf, 1.0);
+                for k in 0..(b.points - 1).max(0) {
+                    cup(
+                        r,
+                        320.0 + k as f32 * 43.0 - 20.0 * sf,
+                        170.0 + nr * 43.0 - 20.0 * sf,
+                        sf,
+                    );
+                }
+                let x = (277.0 + b.points as f32 * 43.0 - 20.0 * sf).max(ui.scroll_in);
+                cup(r, x, 170.0 + nr * 43.0 - 20.0 * sf, sf);
+            } else {
+                let x = 5.0 + ((i + 1) % 2) as f32 * 20.0;
+                r.sheet_sprite(sheet, b.sprite_nr(), x, row_y - 40.0 + off);
+                for k in 0..b.points {
+                    cup(r, 300.0 + k as f32 * 43.0, row_y, 1.0);
+                }
             }
         }
     }
@@ -589,5 +597,148 @@ pub fn draw_map_preview(
                 r.sprite_tinted(s.tex, s.cell(ad), dst, [1.0; 4]);
             }
         }
+    }
+}
+
+const TEAM_NAMES: [&str; 4] = ["Blood Team", "Gold Team", "Water Team", "Leaf Team"];
+const TEAM_COLORS: [(u8, u8, u8); 4] = [
+    (255, 128, 128),
+    (255, 255, 0),
+    (128, 128, 255),
+    (128, 255, 128),
+];
+
+/// Cuerpo del marcador por equipos (`GameStatus_Team::draw`): una ventana por equipo (de 380 px,
+/// dos por fila) con sus miembros y las copas medias, y al final los jugadores sin equipo.
+fn draw_team_rows(
+    r: &mut Renderer,
+    a: &Assets,
+    w: &World,
+    players: &[Player],
+    winner: Option<usize>,
+    end_of_game: bool,
+) {
+    let col = text_color();
+    let ms = w.tick as f64 * 1000.0 / TICK_HZ as f64;
+    // Las copas del campeón crecen y encogen; las demás son de media escala.
+    let pulse = ((ms / 100.0).sin() + 2.0) as f32;
+    let cup = |r: &mut Renderer, x: f32, y: f32, scale: f32| {
+        r.sprite_tinted(
+            a.cup.tex,
+            a.cup.cell(0),
+            [x, y, 40.0 * scale, 40.0 * scale],
+            [1.0; 4],
+        );
+    };
+    let member = |r: &mut Renderer, i: usize, x: f32, y: f32| {
+        let skin = &a.skins[players[i].skin];
+        draw_scaled(
+            r,
+            &skin.sheet,
+            w.bombers[i].sprite_nr(),
+            (x, y),
+            skin.offset_y,
+            0.5,
+            1.0,
+        );
+    };
+
+    let (mut wx, mut wy) = (0.0f32, 170.0f32);
+    for team in 0..4u8 {
+        let members: Vec<usize> = (0..w.bombers.len())
+            .filter(|&i| w.bombers[i].team == team + 1)
+            .collect();
+        if members.is_empty() {
+            continue;
+        }
+        let (tr, tg, tb) = TEAM_COLORS[team as usize];
+        for (k, &i) in members.iter().enumerate() {
+            let y = wy + 30.0 + k as f32 * 30.0;
+            r.quad(wx, y, 380.0, 30.0, srgb_rgba(tr, tg, tb, 128));
+            member(r, i, wx, wy + 25.0 + k as f32 * 30.0);
+            r.text(
+                &a.font_small,
+                &players[i].name,
+                wx + 35.0,
+                wy + 35.0 + k as f32 * 30.0,
+                col,
+                Align::Left,
+            );
+        }
+        // Lámpara del equipo, nombre y media de copas por jugador.
+        r.sprite_tinted(
+            a.team_lamps.tex,
+            a.team_lamps.cell(team as u32),
+            [wx, wy, 30.0, 32.0],
+            [1.0; 4],
+        );
+        r.text(
+            &a.font_small,
+            TEAM_NAMES[team as usize],
+            wx + 35.0,
+            wy + 6.0,
+            col,
+            Align::Left,
+        );
+        let total: i32 = members.iter().map(|&i| w.bombers[i].points).sum();
+        for k in 0..total / members.len() as i32 {
+            cup(r, wx + 180.0 + k as f32 * 20.0, wy + 4.0, 0.5);
+        }
+        if end_of_game && winner.is_some_and(|i| w.bombers[i].team == team + 1) {
+            cup(
+                r,
+                wx + 200.0 - 20.0 * pulse,
+                wy + 70.0 - 20.0 * pulse,
+                pulse,
+            );
+        }
+        wx += 400.0;
+        if wx == 800.0 {
+            wx = 0.0;
+            wy += 200.0;
+        }
+    }
+
+    // Los que no tienen equipo, cada uno con sus propias copas.
+    let mut row = 0.0f32;
+    for i in (0..w.bombers.len()).filter(|&i| w.bombers[i].team == 0) {
+        if row == 0.0 {
+            r.text(
+                &a.font_small,
+                "Teamless Heroes",
+                wx + 35.0,
+                wy + 6.0,
+                col,
+                Align::Left,
+            );
+        }
+        r.quad(
+            wx,
+            wy + 30.0 + row * 30.0,
+            380.0,
+            30.0,
+            srgb_rgba(140, 140, 140, 128),
+        );
+        member(r, i, wx, wy + 25.0 + row * 30.0);
+        r.text(
+            &a.font_small,
+            &players[i].name,
+            wx + 32.0,
+            wy + 35.0 + row * 30.0,
+            col,
+            Align::Left,
+        );
+        for j in 0..w.bombers[i].points {
+            cup(r, wx + 180.0 + j as f32 * 20.0, wy + 34.0 + row * 30.0, 0.5);
+        }
+        if end_of_game && winner == Some(i) {
+            cup(
+                r,
+                wx + 200.0 - 20.0 * pulse,
+                wy + 34.0 + row * 30.0 - 20.0 * pulse,
+                pulse,
+            );
+        }
+        row += 1.0;
     }
 }

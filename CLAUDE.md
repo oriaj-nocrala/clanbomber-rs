@@ -78,5 +78,6 @@ enum (`CurrentSurfaceTexture`), `VertexState.buffers` es `&[Option<_>]`, `bind_g
 5. ~~Menús completos~~ (intro, principal, opciones, Player Setup, Map Selection, Map Editor, Credits, Help)
    → IA hecha (`ai.rs`, port de Controller_AI; AI_mass usa la misma). Sonido hecho (efectos con rodio y
    música `.mod` con libopenmpt; F2 la activa, P pausa), cadáveres, trozos, sangre en los créditos y
-   temblor de explosiones. Pendiente: ratón/joystick (quedan quietos) y equipos (GameStatus_Team).
+   temblor de explosiones. Equipos hechos (rondas por equipo, marcador de equipos, la IA no vuela a compañeros). Pendiente: ratón y
+   joystick (quedan quietos).
 6. Partículas (compute), sprites con IA.

@@ -169,6 +169,8 @@ impl App {
         let mut world = World::with_config(map, seed, self.config.clone());
         world.playlist = Some(list);
         world.start_match(players.len());
+        let teams: Vec<u8> = players.iter().map(|p| p.team).collect();
+        world.set_teams(&teams);
         // IA (`Controller_AI`); `AI_mass` comparte de momento la misma.
         for (i, p) in players.iter().enumerate() {
             if matches!(p.controller, ControllerKind::Ai | ControllerKind::AiMass) {

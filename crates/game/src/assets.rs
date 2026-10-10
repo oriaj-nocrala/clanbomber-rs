@@ -35,6 +35,8 @@ pub struct Assets {
     /// ps_teams.png y ps_controls.png: 5 celdas de 125x56 en vertical.
     pub ps_teams: Sheet,
     pub ps_controls: Sheet,
+    /// ps_teamlamps.png: la lámpara de cada equipo (4 celdas de 30x32).
+    pub team_lamps: Sheet,
     pub not_available: TextureId,
     pub cb_logo: TextureId,
     pub fl_logo: TextureId,
@@ -83,6 +85,7 @@ impl Assets {
         );
         let editor_bg = tex("map_editor.png");
         let (ps_teams, ps_controls) = (tex("ps_teams.png"), tex("ps_controls.png"));
+        let team_lamps = tex("ps_teamlamps.png");
         let (not_available, cb_logo, fl_logo) = (
             tex("not_available.png"),
             tex("cb_logo_small.png"),
@@ -120,6 +123,7 @@ impl Assets {
             editor_bg,
             ps_teams: r.sheet(ps_teams, 125.0, 56.0),
             ps_controls: r.sheet(ps_controls, 125.0, 56.0),
+            team_lamps: r.sheet(team_lamps, 30.0, 32.0),
             not_available,
             cb_logo,
             fl_logo,
