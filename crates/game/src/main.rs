@@ -1,12 +1,14 @@
+use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::Instant;
 
-use cb_core::{Dir, Map, Tile, World, MAP_HEIGHT, MAP_WIDTH, TICK_HZ, TILE_PIXELS};
+use cb_core::{Dir, Input, Map, Tile, World, MAP_HEIGHT, MAP_WIDTH, TICK_HZ, TILE_PIXELS};
 use cb_render::{Renderer, Sheet};
 use winit::application::ApplicationHandler;
 use winit::dpi::LogicalSize;
 use winit::event::WindowEvent;
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
+use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::window::{Window, WindowId};
 
 /// Tema visual (0..6): cada tema ocupa 4 celdas en maptiles.png.
@@ -15,11 +17,35 @@ const THEME: u32 = 0;
 struct Sprites {
     maptiles: Sheet,
     addons: Sheet,
+    /// Skins 0 (snake) y 1 (tux): celdas de 40x60 (Resources::Bombers).
+    bombers: [Sheet; 2],
 }
+
+/// Offset de dibujo de los bombers de 40x60 (Bomber::Bomber: offset_x = 60, offset_y = 11).
+const BOMBER_OFFSET: (f32, f32) = (60.0, 11.0);
+
+/// Teclas de los dos primeros keymaps del original: flechas + Enter, y WASD + Tab.
+const KEYMAPS: [[KeyCode; 5]; 2] = [
+    [
+        KeyCode::ArrowLeft,
+        KeyCode::ArrowRight,
+        KeyCode::ArrowUp,
+        KeyCode::ArrowDown,
+        KeyCode::Enter,
+    ],
+    [
+        KeyCode::KeyA,
+        KeyCode::KeyD,
+        KeyCode::KeyW,
+        KeyCode::KeyS,
+        KeyCode::Tab,
+    ],
+];
 
 struct App {
     world: World,
     sprites: Option<Sprites>,
+    keys: HashSet<KeyCode>,
     gfx: Option<(Arc<Window>, Renderer)>,
     last: Instant,
     acc: f64,
@@ -67,7 +93,31 @@ impl App {
                 }
             }
         }
+        for (b, sheet) in self.world.bombers.iter().zip(sp.bombers.iter().cycle()) {
+            r.sheet_sprite(
+                sheet,
+                b.sprite_nr(),
+                b.get_x() as f32 + BOMBER_OFFSET.0,
+                b.get_y() as f32 + BOMBER_OFFSET.1,
+            );
+        }
         r.render();
+    }
+
+    fn inputs(&self) -> Vec<Input> {
+        KEYMAPS
+            .iter()
+            .map(|k| {
+                let down = |i: usize| self.keys.contains(&k[i]);
+                Input {
+                    left: down(0),
+                    right: down(1),
+                    up: down(2),
+                    down: down(3),
+                    bomb: down(4),
+                }
+            })
+            .collect()
     }
 }
 
@@ -90,9 +140,17 @@ impl ApplicationHandler for App {
             load(&mut renderer, "maptiles.png"),
             load(&mut renderer, "maptile_addons.png"),
         );
+        let (snake, tux) = (
+            load(&mut renderer, "bomber_snake.png"),
+            load(&mut renderer, "bomber_tux.png"),
+        );
         self.sprites = Some(Sprites {
             maptiles: renderer.sheet(mt, 40.0, 40.0),
             addons: renderer.sheet(ad, 40.0, 40.0),
+            bombers: [
+                renderer.sheet(snake, 40.0, 60.0),
+                renderer.sheet(tux, 40.0, 60.0),
+            ],
         });
         self.gfx = Some((window, renderer));
         self.last = Instant::now();
@@ -101,12 +159,17 @@ impl ApplicationHandler for App {
     fn window_event(&mut self, el: &ActiveEventLoop, _: WindowId, ev: WindowEvent) {
         match ev {
             WindowEvent::CloseRequested => el.exit(),
-            WindowEvent::KeyboardInput { event, .. }
-                if event.state.is_pressed()
-                    && event.logical_key
-                        == winit::keyboard::Key::Named(winit::keyboard::NamedKey::Escape) =>
-            {
-                el.exit()
+            WindowEvent::KeyboardInput { event, .. } => {
+                if let PhysicalKey::Code(code) = event.physical_key {
+                    if event.state.is_pressed() {
+                        if code == KeyCode::Escape {
+                            el.exit();
+                        }
+                        self.keys.insert(code);
+                    } else {
+                        self.keys.remove(&code);
+                    }
+                }
             }
             WindowEvent::Resized(s) => {
                 if let Some((_, r)) = self.gfx.as_mut() {
@@ -120,7 +183,8 @@ impl ApplicationHandler for App {
                 self.last = now;
                 let dt = 1.0 / TICK_HZ as f64;
                 while self.acc >= dt {
-                    self.world.step();
+                    let inputs = self.inputs();
+                    self.world.step(&inputs);
                     self.acc -= dt;
                 }
                 self.draw();
@@ -140,9 +204,12 @@ fn main() {
     let map = Map::load(&path).unwrap_or_else(|e| panic!("no se pudo cargar {path}: {e:?}"));
     let el = EventLoop::new().unwrap();
     el.set_control_flow(ControlFlow::Poll);
+    let mut world = World::new(map);
+    world.spawn_bombers(2);
     el.run_app(&mut App {
-        world: World::new(map),
+        world,
         sprites: None,
+        keys: HashSet::new(),
         gfx: None,
         last: Instant::now(),
         acc: 0.0,
