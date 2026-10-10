@@ -320,7 +320,9 @@ impl App {
             }
             Outcome::Activate(Id::MapSelection) => self.open_map_select(),
             Outcome::Activate(Id::MapEditor) => self.open_map_editor(),
-            Outcome::Activate(Id::Credits) => self.screen = Screen::Credits(Credits::new()),
+            Outcome::Activate(Id::Credits) => {
+                self.screen = Screen::Credits(Credits::new(clock_seed()))
+            }
             Outcome::Activate(Id::Help) => self.screen = Screen::Help(Help::new()),
             Outcome::Activate(_) | Outcome::None => {}
             Outcome::Changed(id, v) => {
@@ -442,8 +444,16 @@ impl ApplicationHandler for App {
                         }
                     }
                     Screen::Credits(c) => {
-                        if c.update(frame as f32) {
+                        let tick = c.update(frame as f32, self.config.kids_mode);
+                        if tick.stopped {
                             self.audio.play(Sfx::CreditsStop);
+                        }
+                        for n in 0..tick.splashes {
+                            self.audio.play(if n % 2 == 0 {
+                                Sfx::Splash1
+                            } else {
+                                Sfx::Splash2
+                            });
                         }
                     }
                     Screen::Intro(i) => {

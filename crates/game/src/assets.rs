@@ -23,6 +23,8 @@ pub struct Assets {
     pub observer: Sheet,
     /// cup2.png: la copa del marcador.
     pub cup: Sheet,
+    /// corpse_parts.png: 4 trozos de 40x40.
+    pub corpse_parts: Sheet,
     pub status_bg: TextureId,
     pub title_bg: TextureId,
     /// Fondos de las pantallas de menú (800x600).
@@ -72,6 +74,7 @@ impl Assets {
             .map(|(f, h, o)| (tex(f), *h, *o))
             .collect();
         let (observer, cup) = (tex("observer.png"), tex("cup2.png"));
+        let corpse_parts = tex("corpse_parts.png");
         let (status_bg, title_bg) = (tex("game_status.png"), tex("clanbomber_title_andi.png"));
         let (player_setup_bg, map_select_bg, credits_bg) = (
             tex("playersetup.png"),
@@ -108,6 +111,7 @@ impl Assets {
                 .collect(),
             observer: r.sheet(observer, 40.0, 40.0),
             cup: r.sheet(cup, 40.0, 40.0),
+            corpse_parts: r.sheet(corpse_parts, 40.0, 40.0),
             status_bg,
             title_bg,
             player_setup_bg,

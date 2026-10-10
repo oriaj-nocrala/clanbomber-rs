@@ -32,6 +32,9 @@ pub struct World {
     pub ais: Vec<Option<Ai>>,
     pub(crate) events: Vec<GameEvent>,
     pub(crate) hurry_played: bool,
+    /// Ticks de temblor de pantalla que quedan (`Map::is_shaken`): las casillas se dibujan
+    /// desplazadas al azar.
+    pub shake: u32,
     /// Reglas de partida (reloj, ganador, rondas); las pruebas sueltas las dejan apagadas.
     pub(crate) rounds_enabled: bool,
     pub round_time: f32,
@@ -127,6 +130,7 @@ impl World {
             ais: Vec::new(),
             events: Vec::new(),
             hurry_played: false,
+            shake: 0,
             rounds_enabled: false,
             round_time: config.round_time as f32,
             observer: Observer::new(),
@@ -230,6 +234,7 @@ impl World {
             }
         }
         self.delete_some();
+        self.shake = self.shake.saturating_sub(1);
         // Una caja que acaba de desmoronarse puede soltar un extra (MapTile_Box::act).
         for (x, y) in self.map.act(TICK_DT) {
             self.spawn_extra(x as i32 * 40, y as i32 * 40);
@@ -888,6 +893,10 @@ impl World {
                 .any(|o| matches!(o, Object::Extra(e) if e.rests_on_tile() && e.tile() == (tx, ty)))
         };
         self.events.push(GameEvent::Explode);
+        // `Map::shake(0.25 / dt)`: un cuarto de segundo de temblor si la opción está activa.
+        if self.config.shaky_explosions {
+            self.shake = (0.25 / TICK_DT) as u32;
+        }
         let e = Explosion::new(&mut self.map, &has_extra, x, y, power, owner);
         // MapTile::destroy(): las casillas alcanzadas destruyen los extras que hay en ellas.
         for i in self.extras_where(|t| e.destroyed_tiles.contains(&t)) {
@@ -2201,5 +2210,33 @@ mod tests {
         }
         let c = corpses(&w)[0];
         assert!((c.get_x() - 320).abs() + (c.get_y() - 240).abs() < 600);
+    }
+
+    #[test]
+    fn explosions_shake_the_screen_for_a_quarter_of_a_second_when_enabled() {
+        let mut w = open_world();
+        w.bombers[0] = Bomber::new(1 * 40, 1 * 40);
+        let mut b = Bomb::new(8, 6, 1, 1);
+        b.countdown = 0.01;
+        w.objects.push(Object::Bomb(b));
+        w.step(&[]);
+        w.step(&[]);
+        assert!((10..=15).contains(&w.shake), "shake={}", w.shake);
+        for _ in 0..20 {
+            w.step(&[]);
+        }
+        assert_eq!(w.shake, 0);
+
+        let mut cfg = Config::default();
+        cfg.shaky_explosions = false;
+        let mut w = World::with_config(arena(), 1, cfg);
+        w.bombers = vec![Bomber::new(1 * 40, 1 * 40), Bomber::new(15 * 40, 11 * 40)];
+        let mut b = Bomb::new(8, 6, 1, 1);
+        b.countdown = 0.01;
+        w.objects.push(Object::Bomb(b));
+        for _ in 0..4 {
+            w.step(&[]);
+        }
+        assert_eq!(w.shake, 0);
     }
 }

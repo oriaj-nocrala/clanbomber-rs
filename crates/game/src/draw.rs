@@ -1,7 +1,7 @@
 //! Dibujo de la partida: mapa, objetos, observador, reloj y marcador.
 //! Todo en el lienzo virtual de 800x600, con las coordenadas y el orden del original.
 
-use cb_core::{Dir, Map, Phase, Tile, World, MAP_HEIGHT, MAP_WIDTH, TICK_HZ, TILE_PIXELS};
+use cb_core::{Dir, Map, Object, Phase, Tile, World, MAP_HEIGHT, MAP_WIDTH, TICK_HZ, TILE_PIXELS};
 use cb_render::{Align, Renderer, Sheet};
 
 use crate::assets::Assets;
@@ -174,7 +174,13 @@ fn draw_game(r: &mut Renderer, a: &Assets, w: &World, players: &[Player]) {
             let Some((base, addon)) = tile_cells(&w.map, x, y) else {
                 continue;
             };
-            let (px, py) = (ox + x as f32 * t, oy + y as f32 * t);
+            let (mut px, mut py) = (ox + x as f32 * t, oy + y as f32 * t);
+            if w.shake > 0 {
+                // Temblor: cada casilla se desplaza entre -2 y 2 px al azar en cada fotograma.
+                let h = (w.tick.wrapping_mul(2654435761) ^ (y * 31 + x) as u64 * 40503) as u32;
+                px += (h % 5) as f32 - 2.0;
+                py += ((h / 5) % 5) as f32 - 2.0;
+            }
             // Una casilla que desaparece se encoge hacia su centro mientras se desvanece.
             let vanish = w
                 .map
@@ -252,6 +258,30 @@ fn draw_game(r: &mut Renderer, a: &Assets, w: &World, players: &[Player]) {
                 skin.offset_y,
                 b.fall_countdown,
             );
+        }
+    }
+    // Cadáveres (Z_CORPSE = 100 + y): sobre el suelo, bajo los extras.
+    for o in &w.objects {
+        if let Object::Corpse(c) = o {
+            let skin = &a.skins[players[c.owner].skin];
+            let pos = (ox + c.get_x() as f32, oy + c.get_y() as f32);
+            if c.falling {
+                draw_falling(
+                    r,
+                    &skin.sheet,
+                    c.sprite_nr,
+                    pos,
+                    skin.offset_y,
+                    c.fall_countdown,
+                );
+            } else {
+                r.sheet_sprite(
+                    &skin.sheet,
+                    c.sprite_nr,
+                    c.get_x() as f32 + BOMBER_OFFSET_X,
+                    c.get_y() as f32 + skin.offset_y,
+                );
+            }
         }
     }
     for e in w.extras().filter(|e| !e.falling && !e.flight.active) {
@@ -334,6 +364,21 @@ fn draw_game(r: &mut Renderer, a: &Assets, w: &World, players: &[Player]) {
             );
         }
     }
+    // Trozos de cadáver (Z_CORPSE_PART = 7000): por encima de los bombers.
+    for o in &w.objects {
+        if let Object::CorpsePart(p) = o {
+            if !p.flight.active {
+                let (x, y) = (p.x.trunc() + 60.0, p.y.trunc() + 40.0);
+                let s = &a.corpse_parts;
+                r.sprite_tinted(
+                    s.tex,
+                    s.cell(p.sprite_nr),
+                    [x, y, 40.0, 40.0],
+                    [1.0, 1.0, 1.0, p.opacity()],
+                );
+            }
+        }
+    }
     // Objetos en el aire (Z_FLYING): por encima de todo. Crecen hasta mitad de trayecto.
     for b in w.bombs().filter(|b| b.flight.active) {
         let cell = players[b.owner].skin as u32 * 4 + b.frame();
@@ -356,6 +401,21 @@ fn draw_game(r: &mut Renderer, a: &Assets, w: &World, players: &[Player]) {
             e.flight.scale(),
             187.0 / 255.0,
         );
+    }
+
+    for o in &w.objects {
+        if let Object::CorpsePart(p) = o {
+            if p.flight.active {
+                draw_flying(
+                    r,
+                    &a.corpse_parts,
+                    p.sprite_nr,
+                    (ox + p.x, oy + p.y),
+                    p.flight.scale(),
+                    1.0,
+                );
+            }
+        }
     }
 
     draw_observer(r, a, w);
