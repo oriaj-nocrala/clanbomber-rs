@@ -49,6 +49,15 @@ impl From<std::io::Error> for MapError {
     }
 }
 
+/// Caja alcanzada por una explosión: sigue bloqueando 0.5 s y luego pasa a suelo
+/// (MapTile_Box::destroy / MapTile::act en el original).
+#[derive(Clone, Copy, Debug)]
+pub struct Crumble {
+    pub x: usize,
+    pub y: usize,
+    pub left: f32,
+}
+
 #[derive(Clone, Debug)]
 pub struct Map {
     pub author: String,
@@ -58,6 +67,7 @@ pub struct Map {
     pub spawns: Vec<(u8, usize, usize)>,
     /// Casillas `R`: caja con probabilidad 2/3 (se resuelve al iniciar la partida).
     pub random_boxes: Vec<(usize, usize)>,
+    pub crumbling: Vec<Crumble>,
 }
 
 impl Map {
@@ -87,6 +97,7 @@ impl Map {
             tiles: [[Tile::None; MAP_HEIGHT]; MAP_WIDTH],
             spawns: Vec::new(),
             random_boxes: Vec::new(),
+            crumbling: Vec::new(),
         };
 
         for y in 0..MAP_HEIGHT {
@@ -145,6 +156,41 @@ impl Map {
         }
         let t = TILE_PIXELS as i32;
         self.blocking_tile(px / t, py / t)
+    }
+
+    /// `MapTile::destroy()`: solo las cajas reaccionan; fuera del mapa no hace nada.
+    pub fn destroy(&mut self, tx: i32, ty: i32) {
+        if self.get(tx, ty) == Tile::Box && !self.is_crumbling(tx, ty) {
+            self.crumbling.push(Crumble {
+                x: tx as usize,
+                y: ty as usize,
+                left: 0.5,
+            });
+        }
+    }
+
+    pub fn is_crumbling(&self, tx: i32, ty: i32) -> bool {
+        self.crumbling
+            .iter()
+            .any(|c| c.x as i32 == tx && c.y as i32 == ty)
+    }
+
+    /// `Map::act()`: avanza las cajas que se desmoronan.
+    pub fn act(&mut self, dt: f32) {
+        for c in &mut self.crumbling {
+            c.left -= dt;
+        }
+        let done: Vec<Crumble> = self
+            .crumbling
+            .iter()
+            .copied()
+            .filter(|c| c.left <= 0.0)
+            .collect();
+        self.crumbling.retain(|c| c.left > 0.0);
+        for c in done {
+            // TODO(extras): MapTile_Box::act llama a spawn_extra() al terminar.
+            self.tiles[c.x][c.y] = Tile::Ground;
+        }
     }
 
     pub fn set(&mut self, x: usize, y: usize, t: Tile) {

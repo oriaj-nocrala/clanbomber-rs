@@ -27,6 +27,15 @@ pub struct Bomber {
     remainder: f32,
     /// Contador de animación; el frame es su parte entera (1..=8 al caminar).
     pub anim_count: f32,
+    pub dead: bool,
+    /// Bombas que puede colocar ahora mismo (`cur_bombs`); sube al explotar una suya.
+    pub cur_bombs: i32,
+    /// Bombas simultáneas máximas (`Config::start_bombs`).
+    pub bombs: i32,
+    /// Alcance de la explosión (`Config::start_power`).
+    pub power: i32,
+    pub kills: i32,
+    pub deaths: i32,
 }
 
 const T: i32 = TILE_PIXELS as i32;
@@ -41,7 +50,31 @@ impl Bomber {
             speed: 90,
             remainder: 0.0,
             anim_count: 0.0,
+            dead: false,
+            cur_bombs: 1,
+            bombs: 1,
+            power: 1,
+            kills: 0,
+            deaths: 0,
         }
+    }
+
+    /// Casilla (en tiles) sobre la que está el bomber: `get_maptile()` del original.
+    pub fn tile(&self) -> (i32, i32) {
+        ((self.get_x() + 20) / T, (self.get_y() + 20) / T)
+    }
+
+    /// `Bomber::die()`. Devuelve `true` si acaba de morir.
+    /// TODO(cadáver): el original crea un `Bomber_Corpse` y suelta los extras.
+    pub fn die(&mut self) -> bool {
+        if self.dead {
+            return false;
+        }
+        self.dead = true;
+        self.deaths += 1;
+        self.x = 0.0;
+        self.y = 0.0;
+        true
     }
 
     pub fn get_x(&self) -> i32 {
@@ -57,8 +90,19 @@ impl Bomber {
         self.dir.index() * 10 + self.anim_count as u32
     }
 
-    /// Parte de `Bomber::act` que mueve al bomber. `dt` en segundos.
-    pub fn act(&mut self, dt: f32, input: Input, map: &Map) {
+    /// `Bomber::act` completo salvo enfermedades, caída y guantes.
+    /// `bomb_at(tx, ty)`: ¿hay una bomba en esa casilla? Devuelve `true` si quiere colocar
+    /// una bomba (la crea el `World`, que es quien las posee).
+    pub fn act(
+        &mut self,
+        dt: f32,
+        input: Input,
+        map: &Map,
+        bomb_at: &dyn Fn(i32, i32) -> bool,
+    ) -> bool {
+        if self.dead {
+            return false;
+        }
         // Prioridad del original: izquierda, arriba, derecha, abajo.
         let dir = if input.left {
             Some(Dir::Left)
@@ -77,17 +121,20 @@ impl Bomber {
                 self.dir = d;
                 // `speed/90` es división entera en el original.
                 self.anim_count += dt * 20.0 * (self.speed / 90) as f32;
-                self.step(dt, map);
+                self.step(dt, map, bomb_at);
             }
             None => self.anim_count = 0.0,
         }
         if self.anim_count >= 9.0 {
             self.anim_count = 1.0;
         }
+
+        // Con una bomba bajo los pies no se puede poner otra (los guantes la lanzarían: TODO).
+        input.bomb && self.cur_bombs > 0 && !bomb_at(self.tile().0, self.tile().1)
     }
 
     /// `GameObject::move()`: avanza `span` píxeles de uno en uno; se detiene al chocar.
-    fn step(&mut self, dt: f32, map: &Map) {
+    fn step(&mut self, dt: f32, map: &Map, bomb_at: &dyn Fn(i32, i32) -> bool) {
         let advance = dt * self.speed as f32;
         let mut span = advance as i32;
         self.remainder += advance - (advance as i32) as f32;
@@ -96,10 +143,10 @@ impl Bomber {
 
         for _ in 0..span {
             let moved = match self.dir {
-                Dir::Left => self.move_left(map),
-                Dir::Right => self.move_right(map),
-                Dir::Up => self.move_up(map),
-                Dir::Down => self.move_down(map),
+                Dir::Left => self.move_left(map, bomb_at),
+                Dir::Right => self.move_right(map, bomb_at),
+                Dir::Up => self.move_up(map, bomb_at),
+                Dir::Down => self.move_down(map, bomb_at),
             };
             if !moved {
                 return;
@@ -109,10 +156,14 @@ impl Bomber {
 
     // Los cuatro `move_*` conservan la estructura del original, incluido el ajuste
     // lateral (`y++`/`y--`) que desliza al bomber alrededor de las esquinas.
-    // TODO(bombas): `maptile->bomb` bloquea el paso y permite patear; llega con las bombas.
+    // Una bomba en la casilla de destino bloquea salvo que el bomber ya esté más allá de la
+    // mitad de su casilla (`get_x() % 40 > 19`, etc.). TODO(patada): con `can_kick` la empuja.
 
-    fn move_right(&mut self, map: &Map) -> bool {
+    fn move_right(&mut self, map: &Map, bomb_at: &dyn Fn(i32, i32) -> bool) -> bool {
         if map.blocking_px(self.x as i32 + T, self.y as i32 + 20) {
+            return false;
+        }
+        if bomb_at((self.get_x() + T) / T, (self.get_y() + 20) / T) && self.get_x() % T <= 19 {
             return false;
         }
         self.x += 1.0;
@@ -127,8 +178,11 @@ impl Bomber {
         true
     }
 
-    fn move_left(&mut self, map: &Map) -> bool {
+    fn move_left(&mut self, map: &Map, bomb_at: &dyn Fn(i32, i32) -> bool) -> bool {
         if map.blocking_px(self.x as i32 - 1, self.y as i32 + 20) {
+            return false;
+        }
+        if bomb_at((self.get_x() - 1) / T, (self.get_y() + 20) / T) && self.get_x() % T >= 20 {
             return false;
         }
         self.x -= 1.0;
@@ -143,8 +197,11 @@ impl Bomber {
         true
     }
 
-    fn move_up(&mut self, map: &Map) -> bool {
+    fn move_up(&mut self, map: &Map, bomb_at: &dyn Fn(i32, i32) -> bool) -> bool {
         if map.blocking_px(self.x as i32 + 20, self.y as i32 - 1) {
+            return false;
+        }
+        if bomb_at((self.get_x() + 20) / T, (self.get_y() - 1) / T) && self.get_y() % T >= 20 {
             return false;
         }
         self.y -= 1.0;
@@ -159,8 +216,11 @@ impl Bomber {
         true
     }
 
-    fn move_down(&mut self, map: &Map) -> bool {
+    fn move_down(&mut self, map: &Map, bomb_at: &dyn Fn(i32, i32) -> bool) -> bool {
         if map.blocking_px(self.x as i32 + 20, self.y as i32 + T) {
+            return false;
+        }
+        if bomb_at((self.get_x() + 20) / T, (self.get_y() + T) / T) && self.get_y() % T <= 19 {
             return false;
         }
         self.y += 1.0;
@@ -212,7 +272,7 @@ mod tests {
         let map = open_field();
         let mut b = Bomber::new(100, 100);
         for _ in 0..60 {
-            b.act(1.0 / 60.0, DOWN, &map);
+            b.act(1.0 / 60.0, DOWN, &map, &|_, _| false);
         }
         // 60 ticks a 1/60 s = 1 s -> ~90 px (el resto fraccionario se acumula).
         assert!((b.y - 100.0 - 90.0).abs() <= 1.0, "y={}", b.y);
@@ -224,7 +284,7 @@ mod tests {
         // Fila 6: "*2 ++++ 4 ++++ 3*": muro en x=0 y x=16.
         let mut b = Bomber::new(15 * 40, 6 * 40);
         for _ in 0..600 {
-            b.act(1.0 / 60.0, RIGHT, &map);
+            b.act(1.0 / 60.0, RIGHT, &map, &|_, _| false);
         }
         assert_eq!(b.get_x(), 15 * 40);
     }
