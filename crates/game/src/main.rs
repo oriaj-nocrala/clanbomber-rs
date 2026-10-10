@@ -23,6 +23,8 @@ struct Sprites {
     bombs: Sheet,
     /// explosion2.png: 7 columnas (tipo de segmento) x 3 filas (frame de animación).
     explosion: Sheet,
+    /// extras2.png: celdas de 40x40, índice = ExtraKind.
+    extras: Sheet,
 }
 
 /// Offset de dibujo de los bombers de 40x60 (Bomber::Bomber: offset_x = 60, offset_y = 11).
@@ -109,6 +111,10 @@ impl App {
         }
         // Orden de z del original: explosiones (2000) < bombas (3000+y) < bombers (4000+y).
         let at = |tx: i32, ty: i32| (ox + (tx * 40) as f32, oy + (ty * 40) as f32);
+        // Z_EXTRA (1000) queda por debajo de las explosiones (2000).
+        for e in self.world.extras() {
+            r.sheet_sprite(&sp.extras, e.kind as u32, ox + e.x as f32, oy + e.y as f32);
+        }
         for e in self.world.explosions() {
             // Índices de segmento: Explosion.h (EXPLODE_LEFT..EXPLODE_X); +anim (0, 7 o 14).
             let (left, h, right, up, v, down, center) = (0, 1, 2, 3, 4, 5, 6);
@@ -218,6 +224,7 @@ impl ApplicationHandler for App {
             load(&mut renderer, "bombs.png"),
             load(&mut renderer, "explosion2.png"),
         );
+        let extras_tex = load(&mut renderer, "extras2.png");
         let (snake, tux) = (
             load(&mut renderer, "bomber_snake.png"),
             load(&mut renderer, "bomber_tux.png"),
@@ -227,6 +234,7 @@ impl ApplicationHandler for App {
             addons: renderer.sheet(ad, 40.0, 40.0),
             bombs: renderer.sheet(bombs_tex, 40.0, 40.0),
             explosion: renderer.sheet(expl_tex, 40.0, 40.0),
+            extras: renderer.sheet(extras_tex, 40.0, 40.0),
             bombers: [
                 renderer.sheet(snake, 40.0, 60.0),
                 renderer.sheet(tux, 40.0, 60.0),
@@ -291,7 +299,15 @@ fn main() {
     let map = Map::load(&path).unwrap_or_else(|e| panic!("no se pudo cargar {path}: {e:?}"));
     let el = EventLoop::new().unwrap();
     el.set_control_flow(ControlFlow::Poll);
-    let mut world = World::new(map);
+    // Semilla distinta en cada partida.
+    let seed = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_nanos() as u64);
+    let mut world = World::with_seed(map, seed);
+    // TODO(enfermedades): sin su efecto implementado, que no caigan.
+    world.extra_config.joint = false;
+    world.extra_config.viagra = false;
+    world.extra_config.koks = false;
     world.spawn_bombers(2);
     el.run_app(&mut App {
         world,
