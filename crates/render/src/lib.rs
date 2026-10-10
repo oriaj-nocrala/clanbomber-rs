@@ -287,6 +287,11 @@ impl Renderer {
         self.push_quad(tex, dst, src, [1.0; 4]);
     }
 
+    /// Como [`sprite`](Self::sprite) pero multiplicando el color (para el alfa al desvanecerse).
+    pub fn sprite_tinted(&mut self, tex: TextureId, src: [f32; 4], dst: [f32; 4], tint: [f32; 4]) {
+        self.push_quad(tex, dst, src, tint);
+    }
+
     /// Celda `index` de una hoja de sprites, en (x, y) a tamaño nativo.
     pub fn sheet_sprite(&mut self, sheet: &Sheet, index: u32, x: f32, y: f32) {
         self.sprite(

@@ -48,6 +48,27 @@ const KEYMAPS: [[KeyCode; 5]; 2] = [
     ],
 ];
 
+/// `GameObject::show(x, y, scale)`: sprite que se encoge hacia su centro mientras cae.
+/// `pos` es (x + 60, y + 40) del objeto y `offset_y` su `offset_y` del original.
+fn draw_falling(
+    r: &mut Renderer,
+    sheet: &Sheet,
+    cell: u32,
+    pos: (f32, f32),
+    offset_y: f32,
+    scale: f32,
+) {
+    let scale = scale.clamp(0.0, 1.0);
+    let x = (20.0 + pos.0 - 20.0 * scale).trunc();
+    let y = (pos.1 + 20.0 + (-40.0 + offset_y) * scale - 20.0 * scale).trunc();
+    r.sprite_tinted(
+        sheet.tex,
+        sheet.cell(cell),
+        [x, y, sheet.cell_w * scale, sheet.cell_h * scale],
+        [1.0, 1.0, 1.0, scale],
+    );
+}
+
 struct App {
     world: World,
     sprites: Option<Sprites>,
@@ -111,8 +132,42 @@ impl App {
         }
         // Orden de z del original: explosiones (2000) < bombas (3000+y) < bombers (4000+y).
         let at = |tx: i32, ty: i32| (ox + (tx * 40) as f32, oy + (ty * 40) as f32);
-        // Z_EXTRA (1000) queda por debajo de las explosiones (2000).
-        for e in self.world.extras() {
+        // Lo que cae (Z_FALLING = -1) queda por debajo de todo; luego extras (1000).
+        for e in self.world.extras().filter(|e| e.falling) {
+            draw_falling(
+                r,
+                &sp.extras,
+                e.kind as u32,
+                (ox + e.x as f32, oy + e.y as f32),
+                40.0,
+                e.fall_countdown,
+            );
+        }
+        for b in self.world.bombs().filter(|b| b.falling) {
+            let cell = b.owner as u32 * 4 + b.frame();
+            draw_falling(
+                r,
+                &sp.bombs,
+                cell,
+                (ox + b.x, oy + b.y),
+                40.0,
+                b.fall_countdown,
+            );
+        }
+        for (b, sheet) in self.world.bombers.iter().zip(sp.bombers.iter().cycle()) {
+            if !b.dead && b.is_falling() {
+                let pos = (ox + b.get_x() as f32, oy + b.get_y() as f32);
+                draw_falling(
+                    r,
+                    sheet,
+                    b.sprite_nr(),
+                    pos,
+                    BOMBER_OFFSET.1,
+                    b.fall_countdown,
+                );
+            }
+        }
+        for e in self.world.extras().filter(|e| !e.falling) {
             r.sheet_sprite(&sp.extras, e.kind as u32, ox + e.x as f32, oy + e.y as f32);
         }
         for e in self.world.explosions() {
@@ -153,28 +208,35 @@ impl App {
                 );
             }
         }
-        for b in self.world.bombs() {
+        for b in self.world.bombs().filter(|b| !b.falling && !b.flying) {
             // sprite_nr = color * 4 + frame (color = skin del bomber que la puso).
-            let color = b.owner as u32;
-            r.sheet_sprite(
-                &sp.bombs,
-                color * 4 + b.frame(),
-                ox + b.x as f32,
-                oy + b.y as f32,
-            );
+            let cell = b.owner as u32 * 4 + b.frame();
+            r.sheet_sprite(&sp.bombs, cell, ox + b.x, oy + b.y);
         }
         for (b, sheet) in self
             .world
             .bombers
             .iter()
             .zip(sp.bombers.iter().cycle())
-            .filter(|(b, _)| !b.dead)
+            .filter(|(b, _)| !b.dead && !b.is_falling())
         {
             r.sheet_sprite(
                 sheet,
                 b.sprite_nr(),
                 b.get_x() as f32 + BOMBER_OFFSET.0,
                 b.get_y() as f32 + BOMBER_OFFSET.1,
+            );
+        }
+        // Bombas en el aire (Z_FLYING): por encima de todo. Crecen hasta el punto medio del vuelo.
+        for b in self.world.bombs().filter(|b| b.flying) {
+            let sf = (b.fly_progress * 3.14).sin() * (1.3 / b.fly_speed) + 1.0;
+            let x = (ox + b.x + 20.0 - sf * 20.0).trunc();
+            let y = (oy + b.y + 40.0 - sf * 40.0).trunc();
+            let cell = b.owner as u32 * 4 + b.frame();
+            r.sprite(
+                sp.bombs.tex,
+                sp.bombs.cell(cell),
+                [x, y, sp.bombs.cell_w * sf, sp.bombs.cell_h * sf],
             );
         }
         r.render();

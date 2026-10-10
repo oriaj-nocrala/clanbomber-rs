@@ -14,7 +14,8 @@ cargo fmt
 ## Estructura
 
 - `crates/core` (`cb-core`): lógica pura, **sin dependencias gráficas ni de ventana**. Determinista, paso
-  fijo (`TICK_HZ` = 60). Mapa (`map.rs`) y `World::step` (`sim.rs`).
+  fijo (`TICK_HZ` = 60). Mapa (`map.rs`), movimiento por píxeles compartido por bombers y bombas
+  (`movement.rs`, port de `GameObject::move_*`), bombers, bombas/explosiones, extras y `World::step` (`sim.rs`).
 - `crates/render` (`cb-render`): wgpu. Batcher de quads en resolución virtual 800x600 con letterbox,
   texturas (`load_texture`), hojas de sprites (`Sheet`), shader en `quad.wgsl`.
 - `crates/game` (`cb-game`): binario winit. Loop con acumulador de tiempo → `World::step` a 60 Hz → dibujo.
@@ -61,5 +62,6 @@ enum (`CurrentSurfaceTexture`), `VertexState.buffers` es `&[Option<_>]`, `bind_g
 ## Hoja de ruta
 
 1. ~~Mapa con texturas~~ 2. ~~Bomber (movimiento + colisión + teclado + sprites)~~ 3. ~~Bombas y explosiones~~
-4. Extras (hecho: caída de cajas, recogida, destrucción) → pendiente: patada, guantes/lanzar, enfermedades
-   (Joint/Viagra/Koks, hoy desactivadas en `cb-game`), hielo/flechas/trampas, cadáveres, fin de ronda 5. Menús, IA, sonido 6. Partículas (compute), sprites IA.
+4. Extras (hecho: caída de cajas, recogida, destrucción, patada, guante/lanzar, caída por agujeros) →
+   pendiente: enfermedades (Joint/Viagra/Koks, hoy desactivadas en `cb-game`), hielo/flechas/trampas,
+   vuelo de extras (`get_passable`), cadáveres, fin de ronda 5. Menús, IA, sonido 6. Partículas (compute), sprites IA.
