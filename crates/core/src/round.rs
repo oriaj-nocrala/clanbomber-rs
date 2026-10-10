@@ -179,6 +179,9 @@ impl World {
 
         // `load_next_valid`: el mapa siguiente se carga ya (el marcador enseña cuál viene).
         let next = match &mut self.playlist {
+            Some(list) if self.config.random_map_order => list
+                .random_for(self.bombers.len(), &mut self.rng)
+                .unwrap_or_else(|_| self.pristine.clone()),
             Some(list) => list
                 .next_for(self.bombers.len())
                 .unwrap_or_else(|_| self.pristine.clone()),

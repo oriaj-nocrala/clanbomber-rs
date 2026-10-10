@@ -332,6 +332,17 @@ impl MapList {
         Map::load(&self.paths[self.index])
     }
 
+    /// `Map::load_random_valid`: salta a un mapa al azar donde caben `players` jugadores.
+    pub fn random_for(&mut self, players: usize, rng: &mut Rng) -> Result<Map, MapError> {
+        let valid: Vec<usize> = (0..self.paths.len())
+            .filter(|&i| Map::load(&self.paths[i]).is_ok_and(|m| m.max_players as usize >= players))
+            .collect();
+        if let Some(&i) = valid.get(rng.below(valid.len().max(1) as u32) as usize) {
+            self.index = i;
+        }
+        self.current()
+    }
+
     /// `Map::load_next_valid`: avanza (con vuelta al principio) hasta un mapa donde caben
     /// `players` jugadores. Si ninguno sirve se queda en el actual.
     pub fn next_for(&mut self, players: usize) -> Result<Map, MapError> {

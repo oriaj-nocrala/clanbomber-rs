@@ -1656,4 +1656,18 @@ mod tests {
             );
         }
     }
+
+    #[test]
+    fn random_map_order_picks_maps_that_fit() {
+        let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../../assets/maps");
+        let mut list = crate::MapList::scan(dir).unwrap();
+        let mut rng = crate::Rng::new(9);
+        let mut seen = std::collections::HashSet::new();
+        for _ in 0..40 {
+            let m = list.random_for(6, &mut rng).unwrap();
+            assert!(m.max_players >= 6, "{}", m.name);
+            seen.insert(m.name);
+        }
+        assert!(seen.len() > 1, "no siempre el mismo");
+    }
 }
