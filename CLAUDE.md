@@ -11,7 +11,7 @@ En Arch: `pacman -S alsa-lib libopenmpt pkgconf systemd-libs`.
 ## Comandos
 
 ```bash
-cargo run -p cb-game                         # el juego (empieza en la intro)
+cargo run -p cb-game                         # el juego (empieza en la intro); el binario se llama clanbomber-rs
 cargo run -p cb-game -- --screenshots docs/img   # recorre las pantallas y guarda PNG + GIF (render offscreen)
 cargo test                                  # incluye parseo de los 33 mapas
 cargo fmt
@@ -67,6 +67,15 @@ La API difiere de la mayoría de tutoriales: `Queue::present(frame)`, `get_curre
 enum (`CurrentSurfaceTexture`), `VertexState.buffers` es `&[Option<_>]`, `bind_group_layouts` es
 `&[Option<&_>]`, `Instance::new_without_display_handle()`. Ante errores de compilación, mirar el código en
 `~/.cargo/registry/src/*/wgpu-30.*`.
+
+## CI/CD
+
+- `.github/workflows/ci.yml`: formato, Clippy (`-D warnings`), tests y compilación release en cada push y PR.
+- `.github/workflows/release.yml`: al subir una etiqueta `vX.Y.Z` empaqueta el binario con `assets/` y publica la
+  versión. Los recursos se buscan en tiempo de ejecución (`crates/game/src/paths.rs`: `CB_ASSETS`, junto al
+  ejecutable, `../share/...`, o el repo).
+- Antes de subir: `cargo fmt --all`, `cargo clippy --workspace --all-targets -- -D warnings` y `cargo test`.
+- El README principal está en inglés; el español va en un `<details>` al final del mismo archivo.
 
 ## Convenciones
 
