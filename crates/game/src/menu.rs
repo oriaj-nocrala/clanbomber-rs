@@ -47,6 +47,7 @@ pub enum Id {
     KidsMode,
     CorpseParts,
     Shake,
+    MapEditor,
     Credits,
     Help,
     // Los mismos ajustes aparecen también en Options (`*_DUPLICATE` del original).
@@ -326,6 +327,7 @@ impl Menu {
             value(Id::RoundTime2, 5, 300),
         );
 
+        m.add(root, Id::MapEditor, "Map Editor", Kind::Item);
         m.add(root, Id::Credits, "Show Credits", Kind::Item);
         m.add(root, Id::Help, "Help Screen", Kind::Item);
         m.add(root, Id::Quit, "Quit Game", Kind::Item);
@@ -481,7 +483,7 @@ mod tests {
     fn navigation_enter_back_and_wrap() {
         let c = Config::default();
         let mut m = Menu::new(&c);
-        // Raíz: New Game, Options, Credits, Help, Quit Game. Subir desde la primera da la vuelta a "Quit Game".
+        // Raíz: New Game, Options, Map Editor, Credits, Help, Quit Game. Subir desde la primera da la vuelta a "Quit Game".
         m.key(KeyCode::ArrowUp);
         assert_eq!(m.key(KeyCode::Enter), Outcome::Activate(Id::Quit));
         m.reset();

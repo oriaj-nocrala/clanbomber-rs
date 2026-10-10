@@ -29,6 +29,7 @@ pub struct Assets {
     pub player_setup_bg: TextureId,
     pub map_select_bg: TextureId,
     pub credits_bg: TextureId,
+    pub editor_bg: TextureId,
     /// ps_teams.png y ps_controls.png: 5 celdas de 125x56 en vertical.
     pub ps_teams: Sheet,
     pub ps_controls: Sheet,
@@ -77,6 +78,7 @@ impl Assets {
             tex("level_selection.png"),
             tex("horst_evil.png"),
         );
+        let editor_bg = tex("map_editor.png");
         let (ps_teams, ps_controls) = (tex("ps_teams.png"), tex("ps_controls.png"));
         let (not_available, cb_logo, fl_logo) = (
             tex("not_available.png"),
@@ -111,6 +113,7 @@ impl Assets {
             player_setup_bg,
             map_select_bg,
             credits_bg,
+            editor_bg,
             ps_teams: r.sheet(ps_teams, 125.0, 56.0),
             ps_controls: r.sheet(ps_controls, 125.0, 56.0),
             not_available,

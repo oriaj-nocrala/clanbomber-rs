@@ -22,7 +22,7 @@ cargo fmt
   `text`, vía `fontdue`), shader en `quad.wgsl`.
 - `crates/game` (`cb-game`): binario winit. Loop con acumulador de tiempo → `World::step` a 60 Hz → dibujo.
   `assets.rs` carga texturas y fuentes; `draw.rs` dibuja mapa, HUD y marcador; `menu.rs` es el menú en árbol
-  (opciones de `Config`, guardadas al cambiar); `player_setup.rs`, `map_select.rs`, `credits.rs` y `help.rs`
+  (opciones de `Config`, guardadas al cambiar); `intro.rs`, `player_setup.rs`, `map_select.rs`, `map_editor.rs`, `credits.rs` y `help.rs`
   son las demás pantallas de menú (`screen.rs`: `Flow` y `TextEdit`). Pantallas: menú ⇄ partida (Esc vuelve al menú; Espacio pasa
   del marcador a la siguiente ronda).
 - `assets/maps`, `assets/pics`: copiados del fork de referencia (ver abajo).
@@ -38,6 +38,8 @@ Datos útiles del original:
 - Mapa 17x13 tiles de 40 px; se dibuja con offset (60, 40) en el lienzo de 800x600.
 - Enum de dirección: `DOWN=0, LEFT=1, UP=2, RIGHT=3`. Addons de flecha en `maptile_addons.png` = `dir+1`;
   hielo = 0, trampa = 7. `maptiles.png`: 4 celdas por tema (suelo, muro, caja, caja+1).
+- Mapas: los del juego en `assets/maps` (solo lectura) y los del usuario en
+  `~/.local/share/clanbomber-rs/maps` (los crea el editor). `MapDoc` es el mapa editable en caracteres.
 - Formato `.map`: línea de autor, entero de jugadores, 13 filas de 17 caracteres.
   `' '` suelo, `*` muro, `+` caja, `R` caja con prob. 2/3, `S` hielo, `<>^v` flechas, `o` trampa,
   `0`-`7` spawns, resto = fuera del mapa.
@@ -70,6 +72,6 @@ enum (`CurrentSurfaceTexture`), `VertexState.buffers` es `&[Option<_>]`, `bind_g
 1. ~~Mapa con texturas~~ 2. ~~Bomber~~ 3. ~~Bombas y explosiones~~
 4. ~~Extras, enfermedades, hielo/flechas/trampas, ciclo de partida (rondas, reloj, marcador)~~
    → pendiente: cadáveres y partes que salen volando al morir.
-5. Menús: ~~principal, opciones, Local Player Setup, Map Selection, Credits, Help~~ → pendiente: Map Editor,
-   intro, IA (los puestos con IA/ratón/joystick quedan quietos), sonido, sangre en los créditos.
+5. ~~Menús completos~~ (intro, principal, opciones, Player Setup, Map Selection, Map Editor, Credits, Help)
+   → pendiente: IA (los puestos con IA/ratón/joystick quedan quietos), sonido, sangre en los créditos.
 6. Partículas (compute), sprites con IA.

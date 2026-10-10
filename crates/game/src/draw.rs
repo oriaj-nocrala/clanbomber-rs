@@ -498,11 +498,12 @@ pub fn draw_map_preview(
     x: f32,
     y: f32,
     factor: f32,
+    random_as_box: bool,
 ) {
     let tile = (40.0 * factor).trunc();
     for ty in 0..MAP_HEIGHT as i32 {
         for tx in 0..MAP_WIDTH as i32 {
-            let cells = if map.random_boxes.contains(&(tx as usize, ty as usize)) {
+            let cells = if random_as_box && map.random_boxes.contains(&(tx as usize, ty as usize)) {
                 Some((2, None))
             } else {
                 tile_cells(map, tx, ty)

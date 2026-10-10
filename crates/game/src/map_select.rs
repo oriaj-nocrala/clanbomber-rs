@@ -34,8 +34,7 @@ fn top_for(current: usize, count: usize) -> usize {
 }
 
 impl MapSelect {
-    pub fn new(dir: &std::path::Path, c: &Config, a: &Assets) -> Option<Self> {
-        let list = MapList::scan(dir).ok()?;
+    pub fn new(list: &MapList, c: &Config, a: &Assets) -> Option<Self> {
         let maps: Vec<Map> = list
             .paths
             .iter()
@@ -179,7 +178,16 @@ impl MapSelect {
             );
         }
 
-        draw_map_preview(r, a, map, c.theme.clamp(0, 5) as u32, 350.0, 125.0, 0.5);
+        draw_map_preview(
+            r,
+            a,
+            map,
+            c.theme.clamp(0, 5) as u32,
+            350.0,
+            125.0,
+            0.5,
+            true,
+        );
 
         let max_text = format!("THIS MAP IS ONLY FOR UP TO {} PLAYERS", map.max_players);
         if (map.max_players as usize) < c.number_of_players() {

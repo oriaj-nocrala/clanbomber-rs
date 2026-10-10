@@ -2,6 +2,8 @@ mod assets;
 mod credits;
 mod draw;
 mod help;
+mod intro;
+mod map_editor;
 mod map_select;
 mod menu;
 mod player_setup;
@@ -25,6 +27,8 @@ use assets::Assets;
 use credits::Credits;
 use draw::{Player, Ui};
 use help::Help;
+use intro::Intro;
+use map_editor::MapEditor;
 use map_select::MapSelect;
 use menu::{Id, Menu, Outcome};
 use player_setup::PlayerSetup;
@@ -57,10 +61,12 @@ const KEYMAPS: [[KeyCode; 5]; 3] = [
 ];
 
 enum Screen {
+    Intro(Intro),
     Menu,
     Game,
     PlayerSetup(PlayerSetup),
     MapSelect(MapSelect),
+    MapEditor(Box<MapEditor>),
     Credits(Credits),
     Help(Help),
 }
@@ -85,8 +91,25 @@ struct App {
     started: Instant,
 }
 
+/// Mapas que trae el juego (de solo lectura).
 fn maps_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/maps")
+}
+
+/// Mapas del usuario (`$XDG_DATA_HOME/clanbomber-rs/maps` o `~/.local/share/...`): los que crea el
+/// editor, que se pueden editar y borrar.
+fn user_maps_dir() -> PathBuf {
+    std::env::var_os("XDG_DATA_HOME")
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|h| Path::new(&h).join(".local/share")))
+        .unwrap_or_else(std::env::temp_dir)
+        .join("clanbomber-rs")
+        .join("maps")
+}
+
+/// Todos los mapas disponibles: los del juego y los del usuario, por orden alfabético.
+fn all_maps() -> Option<MapList> {
+    MapList::scan_dirs(&[(&maps_dir(), false), (&user_maps_dir(), true)]).ok()
 }
 
 fn clock_seed() -> u64 {
@@ -111,7 +134,7 @@ impl App {
         }
         let players: Vec<_> = self.config.enabled_bombers().cloned().collect();
         let seed = clock_seed();
-        let Ok(mut list) = MapList::scan(maps_dir()) else {
+        let Some(mut list) = all_maps() else {
             return;
         };
         if list.paths.is_empty() {
@@ -167,8 +190,20 @@ impl App {
         let Some(a) = self.assets.as_ref() else {
             return;
         };
-        if let Some(ms) = MapSelect::new(&maps_dir(), &self.config, a) {
+        let Some(list) = all_maps() else {
+            return;
+        };
+        if let Some(ms) = MapSelect::new(&list, &self.config, a) {
             self.screen = Screen::MapSelect(ms);
+        }
+    }
+
+    fn open_map_editor(&mut self) {
+        let Some(a) = self.assets.as_ref() else {
+            return;
+        };
+        if let Some(ed) = MapEditor::new(&maps_dir(), &user_maps_dir(), a) {
+            self.screen = Screen::MapEditor(Box::new(ed));
         }
     }
 
@@ -207,8 +242,13 @@ impl App {
         let (flow, save) = match &mut self.screen {
             Screen::PlayerSetup(s) => s.key(code, text, &mut self.config),
             Screen::MapSelect(s) => s.key(code, &mut self.config),
+            Screen::MapEditor(s) => match self.assets.as_ref() {
+                Some(a) => (s.key(code, text, a, &self.config), false),
+                None => (Flow::Stay, false),
+            },
             Screen::Credits(s) => (s.key(code, true), false),
             Screen::Help(s) => (s.key(), false),
+            Screen::Intro(s) => (s.key(code), false),
             Screen::Menu => {
                 self.menu_key(el, code);
                 return;
@@ -234,6 +274,7 @@ impl App {
                 self.screen = Screen::PlayerSetup(PlayerSetup::new())
             }
             Outcome::Activate(Id::MapSelection) => self.open_map_select(),
+            Outcome::Activate(Id::MapEditor) => self.open_map_editor(),
             Outcome::Activate(Id::Credits) => self.screen = Screen::Credits(Credits::new()),
             Outcome::Activate(Id::Help) => self.screen = Screen::Help(Help::new()),
             Outcome::Activate(_) | Outcome::None => {}
@@ -338,6 +379,11 @@ impl ApplicationHandler for App {
                         }
                     }
                     Screen::Credits(c) => c.update(frame as f32),
+                    Screen::Intro(i) => {
+                        if i.update(frame as f32) == Flow::Back {
+                            self.screen = Screen::Menu;
+                        }
+                    }
                     _ => self.acc = 0.0,
                 }
 
@@ -353,6 +399,14 @@ impl ApplicationHandler for App {
                         }
                         (Screen::MapSelect(s), _) => {
                             s.draw(r, a, &self.config);
+                            r.render();
+                        }
+                        (Screen::MapEditor(s), _) => {
+                            s.draw(r, a, &self.config);
+                            r.render();
+                        }
+                        (Screen::Intro(s), _) => {
+                            s.draw(r, a);
                             r.render();
                         }
                         (Screen::Credits(s), _) => {
@@ -384,7 +438,7 @@ fn main() {
     let el = EventLoop::new().unwrap();
     el.set_control_flow(ControlFlow::Poll);
     el.run_app(&mut App {
-        screen: Screen::Menu,
+        screen: Screen::Intro(Intro::new(clock_seed())),
         config,
         config_path,
         menu,
