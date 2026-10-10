@@ -26,8 +26,7 @@ const DRATING_DISEASE: i32 = 10;
 const DRATING_DBOX: i32 = -50;
 const DRATING_EXTRA: i32 = -90;
 const DRATING_BOMB: i32 = -100;
-/// Amigo en el radio de la bomba. Sin equipos todos son enemigos, así que no se usa todavía.
-#[allow(dead_code)]
+/// Compañero de equipo en el radio de la bomba.
 const DRATING_FRIEND: i32 = -200;
 
 type Grid = [[i32; MAP_HEIGHT]; MAP_WIDTH];
@@ -149,14 +148,26 @@ impl AiView<'_> {
         self.map.is_crumbling(x, y)
     }
 
-    /// `bomber_rating`: enemigos en la casilla suman, amigos restan (sin equipos: todos enemigos).
+    /// `bomber_rating`: enemigos en la casilla suman, compañeros de equipo restan.
     fn bomber_rating(&self, x: i32, y: i32) -> i32 {
+        let my_team = self.me().team;
         self.bombers
             .iter()
             .enumerate()
             .filter(|(i, b)| *i != self.me && b.on_ground() && b.tile() == (x, y))
-            .map(|_| DRATING_ENEMY)
+            .map(|(_, b)| {
+                if b.team == 0 || b.team != my_team {
+                    DRATING_ENEMY
+                } else {
+                    DRATING_FRIEND
+                }
+            })
             .sum()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn bomber_rating_for_test(&self, x: i32, y: i32) -> i32 {
+        self.bomber_rating(x, y)
     }
 
     /// `extra_rating`: las enfermedades valen un poco; los extras buenos, no volarlos.

@@ -101,9 +101,42 @@ impl World {
         }
     }
 
-    /// Jugadores vivos (sin equipos).
+    /// Asigna los equipos (`Config::bomber[i].team`). Los equipos de un solo jugador desaparecen
+    /// (`init_game`: "removing teams which only one player is in").
+    pub fn set_teams(&mut self, teams: &[u8]) {
+        for (b, &t) in self.bombers.iter_mut().zip(teams) {
+            b.team = t;
+        }
+        let mut count = [0usize; 4];
+        for b in &self.bombers {
+            if (1..=4).contains(&b.team) {
+                count[b.team as usize - 1] += 1;
+            }
+        }
+        for b in &mut self.bombers {
+            if (1..=4).contains(&b.team) && count[b.team as usize - 1] == 1 {
+                b.team = 0;
+            }
+        }
+    }
+
+    /// ¿Hay equipos en juego? Entonces se usa el marcador por equipos.
+    pub fn is_team_game(&self) -> bool {
+        self.bombers.iter().any(|b| b.team != 0)
+    }
+
+    /// `Observer::active_players`: jugadores vivos, contando un equipo una sola vez... pero solo
+    /// si sus miembros vivos van seguidos en la lista (el original compara con el anterior).
     pub fn active_players(&self) -> usize {
-        self.bombers.iter().filter(|b| !b.dead).count()
+        let mut count = 0;
+        let mut last_team: i32 = -1;
+        for b in self.bombers.iter().filter(|b| !b.dead) {
+            if b.team as i32 != last_team || b.team == 0 {
+                last_team = b.team as i32;
+                count += 1;
+            }
+        }
+        count
     }
 
     /// Segundos de ronda que quedan (negativo = tiempo agotado).
@@ -183,12 +216,7 @@ impl World {
         for b in self.bombers.iter_mut().filter(|b| !b.dead) {
             b.points += 1;
         }
-        // analyze_game: el ganador es el último vivo; la partida acaba al llegar a la meta.
-        let winner = self.bombers.iter().rposition(|b| !b.dead);
-        let end_of_game = self
-            .bombers
-            .iter()
-            .any(|b| b.points == self.config.points_to_win);
+        let (winner, end_of_game) = self.analyze_game();
 
         // `load_next_valid`: el mapa siguiente se carga ya (el marcador enseña cuál viene).
         let next = match &mut self.playlist {
@@ -208,6 +236,45 @@ impl World {
             winner,
             end_of_game,
         };
+    }
+
+    /// `GameStatus::analyze_game` / `GameStatus_Team::analyze_game`: quién gana la ronda y si
+    /// con ella termina la partida.
+    fn analyze_game(&self) -> (Option<usize>, bool) {
+        let goal = self.config.points_to_win;
+        if !self.is_team_game() {
+            // El ganador es el último vivo; la partida acaba cuando alguien llega a la meta.
+            let winner = self.bombers.iter().rposition(|b| !b.dead);
+            return (winner, self.bombers.iter().any(|b| b.points == goal));
+        }
+
+        let mut winner = None;
+        let mut end_of_game = false;
+        let mut team_count = [0i32; 4];
+        let mut team_points = [0i32; 4];
+        for (i, b) in self.bombers.iter().enumerate() {
+            if b.team == 0 {
+                if !b.dead {
+                    winner = Some(i);
+                    if b.points == goal {
+                        end_of_game = true;
+                    }
+                }
+            } else {
+                if !b.dead {
+                    winner = Some(i);
+                }
+                team_count[b.team as usize - 1] += 1;
+                team_points[b.team as usize - 1] += b.points;
+            }
+        }
+        // Un equipo gana la partida cuando la media de sus miembros llega a la meta.
+        for t in 0..4 {
+            if team_count[t] > 0 && team_points[t] >= team_count[t] * goal {
+                end_of_game = true;
+            }
+        }
+        (winner, end_of_game)
     }
 
     /// Nombre del mapa de la siguiente ronda (para el marcador).

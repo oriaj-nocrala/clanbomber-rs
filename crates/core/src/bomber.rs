@@ -44,6 +44,8 @@ pub struct Bomber {
     pub deaths: i32,
     /// Rondas ganadas en la partida (`inc_points`).
     pub points: i32,
+    /// Equipo: 0 = sin equipo, 1..=4.
+    pub team: u8,
     /// Posición de salida de la ronda en píxeles (`orig_x`, `orig_y`).
     pub orig: (i32, i32),
     /// Vuelo de entrada desde el centro del mapa al inicio de cada ronda.
@@ -94,6 +96,7 @@ impl Bomber {
             kills: 0,
             deaths: 0,
             points: 0,
+            team: 0,
             orig: (orig_x, orig_y),
             flight: Flight::default(),
             stopped: false,

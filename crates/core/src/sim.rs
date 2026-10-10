@@ -2239,4 +2239,140 @@ mod tests {
         }
         assert_eq!(w.shake, 0);
     }
+
+    // ---- Equipos ----
+
+    #[test]
+    fn single_member_teams_are_dissolved() {
+        let mut w = match_world();
+        w.set_teams(&[1, 2]);
+        assert_eq!((w.bombers[0].team, w.bombers[1].team), (0, 0));
+        assert!(!w.is_team_game());
+
+        let mut w = World::with_seed(arena(), 1);
+        w.start_match(4);
+        w.set_teams(&[1, 1, 2, 0]);
+        assert_eq!(
+            w.bombers.iter().map(|b| b.team).collect::<Vec<_>>(),
+            vec![1, 1, 0, 0]
+        );
+        assert!(w.is_team_game());
+    }
+
+    #[test]
+    fn a_team_counts_once_only_when_its_members_are_adjacent() {
+        let mut w = World::with_seed(arena(), 1);
+        w.start_match(4);
+        w.bombers[0].team = 1;
+        w.bombers[1].team = 1;
+        w.bombers[2].team = 2;
+        w.bombers[3].team = 2;
+        assert_eq!(w.active_players(), 2, "dos equipos");
+        // Orden intercalado: el original los cuenta como cuatro.
+        w.bombers[1].team = 2;
+        w.bombers[2].team = 1;
+        assert_eq!(w.active_players(), 4);
+        // Sin equipo, cada jugador cuenta.
+        for b in &mut w.bombers {
+            b.team = 0;
+        }
+        assert_eq!(w.active_players(), 4);
+    }
+
+    #[test]
+    fn the_round_ends_when_only_one_team_is_left_and_all_survivors_score() {
+        let mut w = World::with_seed(arena(), 2);
+        w.start_match(4);
+        w.set_teams(&[1, 1, 2, 2]);
+        land(&mut w);
+        w.bombers[2].die();
+        w.bombers[3].die();
+        for _ in 0..3 {
+            w.step(&[]);
+        }
+        assert!(
+            matches!(w.phase, Phase::Scores { .. }),
+            "solo queda el equipo 1"
+        );
+        assert_eq!(
+            w.bombers.iter().map(|b| b.points).collect::<Vec<_>>(),
+            vec![1, 1, 0, 0]
+        );
+    }
+
+    #[test]
+    fn a_team_wins_the_match_when_its_average_reaches_the_goal() {
+        let mut w = World::with_seed(arena(), 3);
+        w.start_match(4);
+        w.set_teams(&[1, 1, 2, 2]);
+        land(&mut w);
+        let goal = w.config.points_to_win;
+        // Con 4 puntos cada uno y esta ronda, el equipo 1 llega a la media de la meta.
+        w.bombers[0].points = goal - 1;
+        w.bombers[1].points = goal - 1;
+        w.bombers[2].die();
+        w.bombers[3].die();
+        w.step(&[]);
+        match w.phase {
+            Phase::Scores {
+                winner,
+                end_of_game,
+            } => {
+                assert!(end_of_game);
+                assert!(matches!(winner, Some(0) | Some(1)));
+            }
+            p => panic!("{p:?}"),
+        }
+    }
+
+    #[test]
+    fn one_good_player_is_not_enough_for_a_team_to_win() {
+        let mut w = World::with_seed(arena(), 4);
+        w.start_match(4);
+        w.set_teams(&[1, 1, 2, 2]);
+        land(&mut w);
+        let goal = w.config.points_to_win;
+        w.bombers[0].points = goal; // uno solo con la meta, el otro a cero
+        w.bombers[1].die();
+        w.bombers[2].die();
+        w.bombers[3].die();
+        w.step(&[]);
+        let Phase::Scores { end_of_game, .. } = w.phase else {
+            panic!()
+        };
+        assert!(
+            !end_of_game,
+            "la media del equipo (goal+1)/2 no llega a goal"
+        );
+    }
+
+    #[test]
+    fn the_ai_avoids_blasting_a_teammate() {
+        let mut w = World::with_seed(arena(), 5);
+        w.start_match(2);
+        w.bombers[0].team = 1;
+        w.bombers[1].team = 1;
+        let ai_view_rating = |w: &mut World, team1: u8| {
+            w.bombers[0].team = team1;
+            w.bombers[1].team = team1;
+            let mut rng = crate::Rng::new(1);
+            let cfg = w.config.clone();
+            // Compañero a una casilla del bomber 0.
+            w.bombers[1].flight = crate::flight::Flight::default();
+            w.bombers[1].dead = false;
+            w.bombers[1].x = 6.0 * 40.0;
+            w.bombers[1].y = 5.0 * 40.0;
+            let view = AiView {
+                map: &w.map,
+                objects: &w.objects,
+                bombers: &w.bombers,
+                me: 0,
+                rng: &mut rng,
+                config: &cfg,
+            };
+            view.bomber_rating_for_test(6, 5)
+        };
+        assert_eq!(ai_view_rating(&mut w, 0), 150, "sin equipo: enemigo");
+        assert_eq!(ai_view_rating(&mut w, 1), -200, "mismo equipo: amigo");
+    }
 }
