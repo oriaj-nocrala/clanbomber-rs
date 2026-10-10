@@ -1,13 +1,10 @@
 //! Dibujo de la partida: mapa, objetos, observador, reloj y marcador.
 //! Todo en el lienzo virtual de 800x600, con las coordenadas y el orden del original.
 
-use cb_core::{Dir, Phase, Tile, World, MAP_HEIGHT, MAP_WIDTH, TICK_HZ, TILE_PIXELS};
+use cb_core::{Dir, Map, Phase, Tile, World, MAP_HEIGHT, MAP_WIDTH, TICK_HZ, TILE_PIXELS};
 use cb_render::{Align, Renderer, Sheet};
 
 use crate::assets::Assets;
-
-/// Tema visual (0..6): cada tema ocupa 4 celdas en maptiles.png.
-const THEME: u32 = 0;
 
 /// `offset_x` de dibujo de todos los bombers (`Bomber::Bomber`); el `offset_y` depende del aspecto.
 const BOMBER_OFFSET_X: f32 = 60.0;
@@ -125,13 +122,14 @@ pub fn draw(r: &mut Renderer, a: &Assets, w: &World, ui: &Ui, players: &[Player]
     r.render();
 }
 
-fn tile_cells(w: &World, x: i32, y: i32) -> Option<(u32, Option<u32>)> {
-    Some(match w.map.get(x, y) {
+/// Celda de `maptiles.png` (dentro del tema) y, si lo hay, de `maptile_addons.png` de una casilla.
+fn tile_cells(map: &Map, x: i32, y: i32) -> Option<(u32, Option<u32>)> {
+    Some(match map.get(x, y) {
         Tile::None => return None,
         Tile::Ground => (0, None),
         Tile::Wall => (1, None),
         // Caja alcanzada: sprite_nr++ (MapTile_Box::destroy).
-        Tile::Box => (if w.map.is_crumbling(x, y) { 3 } else { 2 }, None),
+        Tile::Box => (if map.is_crumbling(x, y) { 3 } else { 2 }, None),
         Tile::Ice => (0, Some(0)),
         // Orden del original: DOWN=0, LEFT=1, UP=2, RIGHT=3; los addons de flecha empiezan en 1.
         Tile::Arrow(d) => (
@@ -150,6 +148,8 @@ fn tile_cells(w: &World, x: i32, y: i32) -> Option<(u32, Option<u32>)> {
 }
 
 fn draw_game(r: &mut Renderer, a: &Assets, w: &World, players: &[Player]) {
+    // Tema visual (0..6): cada tema ocupa 4 celdas en maptiles.png.
+    let theme = w.config.theme.clamp(0, 5) as u32;
     let t = TILE_PIXELS as f32;
     // El mapa mide 680x520; se centra en el lienzo virtual de 800x600 (offset 60,40 como el original).
     let (ox, oy) = (
@@ -159,7 +159,7 @@ fn draw_game(r: &mut Renderer, a: &Assets, w: &World, players: &[Player]) {
 
     for y in 0..MAP_HEIGHT as i32 {
         for x in 0..MAP_WIDTH as i32 {
-            let Some((base, addon)) = tile_cells(w, x, y) else {
+            let Some((base, addon)) = tile_cells(&w.map, x, y) else {
                 continue;
             };
             let (px, py) = (ox + x as f32 * t, oy + y as f32 * t);
@@ -180,7 +180,7 @@ fn draw_game(r: &mut Renderer, a: &Assets, w: &World, players: &[Player]) {
                     let sheet = &a.maptiles;
                     r.sprite_tinted(
                         sheet.tex,
-                        sheet.cell(THEME * 4 + base),
+                        sheet.cell(theme * 4 + base),
                         [sx, sy, size[0], size[1]],
                         [1.0, 1.0, 1.0, cd],
                     );
@@ -195,7 +195,7 @@ fn draw_game(r: &mut Renderer, a: &Assets, w: &World, players: &[Player]) {
                     }
                 }
                 None => {
-                    r.sheet_sprite(&a.maptiles, THEME * 4 + base, px, py);
+                    r.sheet_sprite(&a.maptiles, theme * 4 + base, px, py);
                     if let Some(ad) = addon {
                         r.sheet_sprite(&a.addons, ad, px, py);
                     }
@@ -484,6 +484,37 @@ fn draw_scores(
         r.text(&a.font_small, "NEXT LEVEL", 785.0, 10.0, col, Align::Right);
         if let Some(name) = w.next_map_name() {
             r.text(&a.font_small, name, 785.0, 125.0, col, Align::Right);
+        }
+    }
+}
+
+/// `Map::show_preview`: el mapa entero en miniatura con esquina en `(x, y)` y casillas de
+/// `40 * factor` píxeles. Las casillas `R` se enseñan como cajas.
+pub fn draw_map_preview(
+    r: &mut Renderer,
+    a: &Assets,
+    map: &Map,
+    theme: u32,
+    x: f32,
+    y: f32,
+    factor: f32,
+) {
+    let tile = (40.0 * factor).trunc();
+    for ty in 0..MAP_HEIGHT as i32 {
+        for tx in 0..MAP_WIDTH as i32 {
+            let cells = if map.random_boxes.contains(&(tx as usize, ty as usize)) {
+                Some((2, None))
+            } else {
+                tile_cells(map, tx, ty)
+            };
+            let Some((base, addon)) = cells else { continue };
+            let dst = [x + tx as f32 * tile, y + ty as f32 * tile, tile, tile];
+            let s = &a.maptiles;
+            r.sprite_tinted(s.tex, s.cell(theme.min(5) * 4 + base), dst, [1.0; 4]);
+            if let Some(ad) = addon {
+                let s = &a.addons;
+                r.sprite_tinted(s.tex, s.cell(ad), dst, [1.0; 4]);
+            }
         }
     }
 }

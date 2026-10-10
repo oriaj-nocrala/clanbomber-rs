@@ -13,6 +13,8 @@ pub enum Id {
     Root,
     NewGame,
     StartLocal,
+    PlayerSetup,
+    MapSelection,
     RandomPositions,
     RandomMapOrder,
     Points,
@@ -45,6 +47,8 @@ pub enum Id {
     KidsMode,
     CorpseParts,
     Shake,
+    Credits,
+    Help,
     // Los mismos ajustes aparecen también en Options (`*_DUPLICATE` del original).
     RandomPositions2,
     RandomMapOrder2,
@@ -201,6 +205,8 @@ impl Menu {
         m.add(root, Id::NewGame, "New Game", Kind::Item);
         let g = m.index_of(Id::NewGame);
         m.add(g, Id::StartLocal, "Start Local", Kind::Item);
+        m.add(g, Id::PlayerSetup, "Local Player Setup", Kind::Item);
+        m.add(g, Id::MapSelection, "Map Selection", Kind::Item);
         m.add(
             g,
             Id::RandomPositions,
@@ -320,6 +326,8 @@ impl Menu {
             value(Id::RoundTime2, 5, 300),
         );
 
+        m.add(root, Id::Credits, "Show Credits", Kind::Item);
+        m.add(root, Id::Help, "Help Screen", Kind::Item);
         m.add(root, Id::Quit, "Quit Game", Kind::Item);
         m
     }
@@ -351,9 +359,15 @@ impl Menu {
             KeyCode::ArrowDown => self.selection = (self.selection + 1) % n,
             KeyCode::ArrowUp => self.selection = (self.selection + n - 1) % n,
             KeyCode::ArrowRight | KeyCode::ArrowLeft => {
-                let step = if code == KeyCode::ArrowRight { 1 } else { -1 };
+                let dir = if code == KeyCode::ArrowRight { 1 } else { -1 };
                 if let Some(i) = sel {
                     let id = self.items[i].id;
+                    // El tiempo de ronda avanza de 5 en 5 (`CONFIG_ROUND_TIME` del original).
+                    let step = if matches!(id, Id::RoundTime | Id::RoundTime2) {
+                        5 * dir
+                    } else {
+                        dir
+                    };
                     if let Kind::Value { min, max, value } = &mut self.items[i].kind {
                         *value = (*value + step).clamp(*min, *max);
                         return Outcome::Changed(id, *value);
@@ -467,7 +481,7 @@ mod tests {
     fn navigation_enter_back_and_wrap() {
         let c = Config::default();
         let mut m = Menu::new(&c);
-        // Raíz: New Game, Options, Quit Game. Subir desde la primera da la vuelta a "Quit Game".
+        // Raíz: New Game, Options, Credits, Help, Quit Game. Subir desde la primera da la vuelta a "Quit Game".
         m.key(KeyCode::ArrowUp);
         assert_eq!(m.key(KeyCode::Enter), Outcome::Activate(Id::Quit));
         m.reset();
@@ -486,7 +500,7 @@ mod tests {
         let c = Config::default();
         let mut m = Menu::new(&c);
         m.key(KeyCode::Enter); // New Game
-        for _ in 0..3 {
+        for _ in 0..5 {
             m.key(KeyCode::ArrowDown); // hasta Points to win
         }
         for _ in 0..20 {
@@ -504,6 +518,28 @@ mod tests {
             m.key(KeyCode::ArrowLeft),
             Outcome::Changed(Id::Points, 1),
             "suelo en 1"
+        );
+    }
+
+    #[test]
+    fn round_time_moves_in_steps_of_five() {
+        let c = Config::default();
+        let mut m = Menu::new(&c);
+        m.key(KeyCode::Enter); // New Game
+        for _ in 0..6 {
+            m.key(KeyCode::ArrowDown); // hasta Round Time
+        }
+        assert_eq!(
+            m.key(KeyCode::ArrowRight),
+            Outcome::Changed(Id::RoundTime, 95)
+        );
+        assert_eq!(
+            m.key(KeyCode::ArrowLeft),
+            Outcome::Changed(Id::RoundTime, 90)
+        );
+        assert_eq!(
+            m.key(KeyCode::ArrowLeft),
+            Outcome::Changed(Id::RoundTime, 85)
         );
     }
 

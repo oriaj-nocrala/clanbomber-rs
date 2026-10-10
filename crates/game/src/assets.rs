@@ -25,6 +25,16 @@ pub struct Assets {
     pub cup: Sheet,
     pub status_bg: TextureId,
     pub title_bg: TextureId,
+    /// Fondos de las pantallas de menú (800x600).
+    pub player_setup_bg: TextureId,
+    pub map_select_bg: TextureId,
+    pub credits_bg: TextureId,
+    /// ps_teams.png y ps_controls.png: 5 celdas de 125x56 en vertical.
+    pub ps_teams: Sheet,
+    pub ps_controls: Sheet,
+    pub not_available: TextureId,
+    pub cb_logo: TextureId,
+    pub fl_logo: TextureId,
     /// DejaVuSans-Bold a 28 y a 18 px (Resources::Font_big / Font_small).
     pub font_big: Font,
     pub font_small: Font,
@@ -62,6 +72,17 @@ impl Assets {
             .collect();
         let (observer, cup) = (tex("observer.png"), tex("cup2.png"));
         let (status_bg, title_bg) = (tex("game_status.png"), tex("clanbomber_title_andi.png"));
+        let (player_setup_bg, map_select_bg, credits_bg) = (
+            tex("playersetup.png"),
+            tex("level_selection.png"),
+            tex("horst_evil.png"),
+        );
+        let (ps_teams, ps_controls) = (tex("ps_teams.png"), tex("ps_controls.png"));
+        let (not_available, cb_logo, fl_logo) = (
+            tex("not_available.png"),
+            tex("cb_logo_small.png"),
+            tex("fischlustig_logo.png"),
+        );
 
         let font = |r: &mut Renderer, px: f32| {
             let path = format!("{dir}/fonts/DejaVuSans-Bold.ttf");
@@ -87,6 +108,14 @@ impl Assets {
             cup: r.sheet(cup, 40.0, 40.0),
             status_bg,
             title_bg,
+            player_setup_bg,
+            map_select_bg,
+            credits_bg,
+            ps_teams: r.sheet(ps_teams, 125.0, 56.0),
+            ps_controls: r.sheet(ps_controls, 125.0, 56.0),
+            not_available,
+            cb_logo,
+            fl_logo,
             font_big,
             font_small,
         }

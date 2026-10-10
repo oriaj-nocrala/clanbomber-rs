@@ -22,7 +22,8 @@ cargo fmt
   `text`, vía `fontdue`), shader en `quad.wgsl`.
 - `crates/game` (`cb-game`): binario winit. Loop con acumulador de tiempo → `World::step` a 60 Hz → dibujo.
   `assets.rs` carga texturas y fuentes; `draw.rs` dibuja mapa, HUD y marcador; `menu.rs` es el menú en árbol
-  (opciones de `Config`, guardadas al cambiar). Pantallas: menú ⇄ partida (Esc vuelve al menú; Espacio pasa
+  (opciones de `Config`, guardadas al cambiar); `player_setup.rs`, `map_select.rs`, `credits.rs` y `help.rs`
+  son las demás pantallas de menú (`screen.rs`: `Flow` y `TextEdit`). Pantallas: menú ⇄ partida (Esc vuelve al menú; Espacio pasa
   del marcador a la siguiente ronda).
 - `assets/maps`, `assets/pics`: copiados del fork de referencia (ver abajo).
 
@@ -69,6 +70,6 @@ enum (`CurrentSurfaceTexture`), `VertexState.buffers` es `&[Option<_>]`, `bind_g
 1. ~~Mapa con texturas~~ 2. ~~Bomber~~ 3. ~~Bombas y explosiones~~
 4. ~~Extras, enfermedades, hielo/flechas/trampas, ciclo de partida (rondas, reloj, marcador)~~
    → pendiente: cadáveres y partes que salen volando al morir.
-5. Menús: ~~menú principal y opciones~~ → pendiente: Local Player Setup (nombre, aspecto, equipo, controlador),
-   Map Selection con vista previa, Credits/Help/Map Editor, intro. IA y sonido.
+5. Menús: ~~principal, opciones, Local Player Setup, Map Selection, Credits, Help~~ → pendiente: Map Editor,
+   intro, IA (los puestos con IA/ratón/joystick quedan quietos), sonido, sangre en los créditos.
 6. Partículas (compute), sprites con IA.
