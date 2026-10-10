@@ -36,10 +36,9 @@ impl ControllerKind {
             _ => {
                 if let Some(n) = s.strip_prefix("keymap") {
                     ControllerKind::Keymap(n.parse().ok().filter(|n| (1..=3).contains(n))?)
-                } else if let Some(n) = s.strip_prefix("joystick") {
-                    ControllerKind::Joystick(n.parse().ok()?)
                 } else {
-                    return None;
+                    let n = s.strip_prefix("joystick")?;
+                    ControllerKind::Joystick(n.parse().ok()?)
                 }
             }
         })
