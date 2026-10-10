@@ -1,6 +1,7 @@
 //! Formato `.map` de ClanBomber: línea 1 autor, línea 2 máx. jugadores,
 //! luego 13 filas de 17 caracteres.
 
+use crate::mapdoc::MapDoc;
 use crate::rng::Rng;
 
 pub const MAP_WIDTH: usize = 17;
@@ -96,25 +97,15 @@ impl Map {
     }
 
     pub fn parse(src: &str) -> Result<Self, MapError> {
-        // Replica la lectura del original: autor = primera línea; el entero
-        // salta espacios en blanco; después los caracteres ignoran solo '\n'.
-        let (author, rest) = src
-            .split_once('\n')
-            .ok_or(MapError::Format("falta autor"))?;
-        let author = author.trim_end_matches('\r').to_owned();
-        let rest = rest.trim_start();
-        let digits = rest
-            .find(|c: char| !c.is_ascii_digit())
-            .unwrap_or(rest.len());
-        let max_players = rest[..digits]
-            .parse()
-            .map_err(|_| MapError::Format("máx. jugadores inválido"))?;
-        let mut chars = rest[digits..].chars().filter(|&c| c != '\n');
+        Ok(Self::from_doc(&MapDoc::parse(src)?))
+    }
 
+    /// Construye el mapa jugable a partir de su descripción en caracteres.
+    pub fn from_doc(doc: &MapDoc) -> Self {
         let mut map = Map {
             name: String::new(),
-            author,
-            max_players,
+            author: doc.author.clone(),
+            max_players: doc.max_players,
             tiles: [[Tile::None; MAP_HEIGHT]; MAP_WIDTH],
             spawns: Vec::new(),
             random_boxes: Vec::new(),
@@ -124,7 +115,7 @@ impl Map {
 
         for y in 0..MAP_HEIGHT {
             for x in 0..MAP_WIDTH {
-                let c = chars.next().ok_or(MapError::Format("mapa incompleto"))?;
+                let c = doc.data[x][y];
                 map.tiles[x][y] = match c {
                     ' ' => Tile::Ground,
                     '0'..='7' => {
@@ -148,7 +139,7 @@ impl Map {
             }
         }
         map.spawns.sort_unstable();
-        Ok(map)
+        map
     }
 
     /// Fuera de rango devuelve `Tile::None`, como el `dummy_maptile` del original.
@@ -318,19 +309,39 @@ pub struct MapList {
     pub index: usize,
     /// Mapas desmarcados: se saltan al pasar de ronda (`MapEntry::is_enabled`).
     pub disabled: Vec<String>,
+    /// `true` si el archivo se puede editar (los mapas propios del usuario; los que trae el
+    /// juego son de solo lectura). Mismo orden que `paths`.
+    pub writable: Vec<bool>,
 }
 
 impl MapList {
+    /// Mapas de una sola carpeta (todos de solo lectura).
     pub fn scan(dir: impl AsRef<std::path::Path>) -> Result<Self, MapError> {
-        let mut paths: Vec<_> = std::fs::read_dir(dir)?
-            .filter_map(|e| e.ok().map(|e| e.path()))
-            .filter(|p| p.extension().is_some_and(|x| x == "map"))
-            .collect();
-        paths.sort_by_key(|p| p.file_stem().map(|s| s.to_string_lossy().to_lowercase()));
+        Self::scan_dirs(&[(dir.as_ref(), false)])
+    }
+
+    /// Mapas de varias carpetas, cada una marcada como editable o no (`enum_maps`: la de datos
+    /// del juego y la local del usuario). Las carpetas que no existen se ignoran.
+    pub fn scan_dirs(dirs: &[(&std::path::Path, bool)]) -> Result<Self, MapError> {
+        let mut found: Vec<(std::path::PathBuf, bool)> = Vec::new();
+        for &(dir, writable) in dirs {
+            let Ok(read) = std::fs::read_dir(dir) else {
+                continue;
+            };
+            for e in read.filter_map(|e| e.ok()) {
+                let p = e.path();
+                if p.extension().is_some_and(|x| x == "map") {
+                    found.push((p, writable));
+                }
+            }
+        }
+        found.sort_by_key(|(p, _)| p.file_stem().map(|s| s.to_string_lossy().to_lowercase()));
+        let (paths, writable) = found.into_iter().unzip();
         Ok(MapList {
             paths,
             index: 0,
             disabled: Vec::new(),
+            writable,
         })
     }
 
