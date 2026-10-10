@@ -3,6 +3,10 @@
 Port de ClanBomber a Rust + wgpu. Primero paridad de juego con el original, después extras
 (partículas por compute shader, reescalado/sprites con IA).
 
+## Dependencias del sistema
+
+Audio: `alsa-lib` (rodio) y `libopenmpt` + `pkgconf` (la música `.mod`). En Arch: `pacman -S alsa-lib libopenmpt pkgconf`.
+
 ## Comandos
 
 ```bash
@@ -21,7 +25,7 @@ cargo fmt
   texturas (`load_texture`), hojas de sprites (`Sheet`), texto TrueType con atlas de glifos (`load_font`,
   `text`, vía `fontdue`), shader en `quad.wgsl`.
 - `crates/game` (`cb-game`): binario winit. Loop con acumulador de tiempo → `World::step` a 60 Hz → dibujo.
-  `assets.rs` carga texturas y fuentes; `draw.rs` dibuja mapa, HUD y marcador; `menu.rs` es el menú en árbol
+  `assets.rs` carga texturas y fuentes; `draw.rs` dibuja mapa, HUD y marcador; `audio.rs` (efectos y música; el núcleo solo emite `GameEvent`); `menu.rs` es el menú en árbol
   (opciones de `Config`, guardadas al cambiar); `intro.rs`, `player_setup.rs`, `map_select.rs`, `map_editor.rs`, `credits.rs` y `help.rs`
   son las demás pantallas de menú (`screen.rs`: `Flow` y `TextEdit`). Pantallas: menú ⇄ partida (Esc vuelve al menú; Espacio pasa
   del marcador a la siguiente ronda).
@@ -73,6 +77,7 @@ enum (`CurrentSurfaceTexture`), `VertexState.buffers` es `&[Option<_>]`, `bind_g
 4. ~~Extras, enfermedades, hielo/flechas/trampas, ciclo de partida (rondas, reloj, marcador)~~
    → pendiente: cadáveres y partes que salen volando al morir.
 5. ~~Menús completos~~ (intro, principal, opciones, Player Setup, Map Selection, Map Editor, Credits, Help)
-   → IA hecha (`ai.rs`, port de Controller_AI; AI_mass usa la misma). Pendiente: ratón/joystick (quedan
-   quietos), equipos, sonido, cadáveres y sangre en los créditos.
+   → IA hecha (`ai.rs`, port de Controller_AI; AI_mass usa la misma). Sonido hecho (efectos con rodio y
+   música `.mod` con libopenmpt; F2 la activa, P pausa). Pendiente: ratón/joystick (quedan quietos),
+   equipos, cadáveres y sangre en los créditos.
 6. Partículas (compute), sprites con IA.

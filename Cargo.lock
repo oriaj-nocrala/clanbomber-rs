@@ -257,6 +257,7 @@ version = "0.1.0"
 dependencies = [
  "cb-core",
  "cb-render",
+ "openmpt",
  "pollster",
  "rodio",
  "winit",
@@ -1545,6 +1546,21 @@ name = "once_cell"
 version = "1.21.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
+
+[[package]]
+name = "openmpt"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "67693a23b3a21f7804ee1424f30a9abeabc8deb7950637d657df0e49800d0b3f"
+dependencies = [
+ "openmpt-sys",
+]
+
+[[package]]
+name = "openmpt-sys"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "33b6d367e713f891a43679a62499402e871be8a4acd528a5957793d7359c4df9"
 
 [[package]]
 name = "orbclient"

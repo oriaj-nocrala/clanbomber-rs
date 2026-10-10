@@ -111,13 +111,25 @@ fn draw_falling(
     draw_scaled(r, sheet, cell, pos, offset_y, s, s);
 }
 
-pub fn draw(r: &mut Renderer, a: &Assets, w: &World, ui: &Ui, players: &[Player]) {
+pub fn draw(r: &mut Renderer, a: &Assets, w: &World, ui: &Ui, players: &[Player], paused: bool) {
     match w.phase {
         Phase::Playing => draw_game(r, a, w, players),
         Phase::Scores {
             winner,
             end_of_game,
         } => draw_scores(r, a, w, ui, players, winner, end_of_game),
+    }
+    if paused {
+        // `- PAUSED -` sobre la partida oscurecida.
+        r.quad(0.0, 0.0, 800.0, 600.0, srgb_rgba(0, 0, 0, 123));
+        r.text(
+            &a.font_big,
+            "- PAUSED -",
+            400.0,
+            300.0,
+            text_color(),
+            Align::Center,
+        );
     }
     r.render();
 }

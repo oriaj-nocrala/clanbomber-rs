@@ -92,6 +92,9 @@ struct App {
     acc: f64,
     started: Instant,
     audio: Audio,
+    /// Música de fondo (F2); como en el original, empieza apagada en cada arranque.
+    play_music: bool,
+    paused: bool,
 }
 
 /// Mapas que trae el juego (de solo lectura).
@@ -191,6 +194,8 @@ impl App {
         self.bomb_latch = [false; 3];
         self.ui = Ui::new();
         self.screen = Screen::Game;
+        self.paused = false;
+        self.audio.set_music(self.play_music);
         self.acc = 0.0;
         self.last = Instant::now();
     }
@@ -326,22 +331,34 @@ impl App {
         }
     }
 
+    /// Vuelve al menú dejando la partida (la música se apaga al salir de `run_game`).
+    fn leave_game(&mut self) {
+        self.screen = Screen::Menu;
+        self.world = None;
+        self.paused = false;
+        self.audio.set_music(false);
+    }
+
     fn game_key(&mut self, code: KeyCode, repeat: bool) {
         match code {
             // `quit current game`: de vuelta al menú.
             KeyCode::Escape => {
-                self.screen = Screen::Menu;
-                self.world = None;
+                self.leave_game();
                 return;
             }
+            // Música de fondo y pausa (`run_game`).
+            KeyCode::F2 => {
+                self.play_music = !self.play_music;
+                self.audio.set_music(self.play_music);
+            }
+            KeyCode::KeyP | KeyCode::F3 => self.paused = !self.paused,
             // Del marcador a la siguiente ronda; tras la última, de vuelta al menú
             // (GameStatus::show espera la barra espaciadora).
             KeyCode::Space if !repeat => {
                 if let Some(w) = self.world.as_mut() {
                     if let Phase::Scores { end_of_game, .. } = w.phase {
                         if end_of_game {
-                            self.screen = Screen::Menu;
-                            self.world = None;
+                            self.leave_game();
                             return;
                         }
                         w.confirm();
@@ -407,6 +424,9 @@ impl ApplicationHandler for App {
                         // Paso fijo: la simulación avanza en ticks de 1/TICK_HZ, independiente del framerate.
                         self.acc += frame;
                         let dt = 1.0 / TICK_HZ as f64;
+                        if self.paused {
+                            self.acc = 0.0;
+                        }
                         while self.acc >= dt {
                             let inputs = self.inputs();
                             if let Some(w) = self.world.as_mut() {
@@ -442,7 +462,7 @@ impl ApplicationHandler for App {
                 if let (Some((w, r)), Some(a)) = (self.gfx.as_mut(), self.assets.as_ref()) {
                     match (&self.screen, &self.world) {
                         (Screen::Game, Some(world)) => {
-                            draw::draw(r, a, world, &self.ui, &self.players)
+                            draw::draw(r, a, world, &self.ui, &self.players, self.paused)
                         }
                         (Screen::PlayerSetup(s), _) => {
                             s.draw(r, a, &self.config, time);
@@ -505,6 +525,8 @@ fn main() {
         acc: 0.0,
         started: Instant::now(),
         audio: Audio::new(),
+        play_music: false,
+        paused: false,
     })
     .unwrap();
 }
