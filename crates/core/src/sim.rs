@@ -16,6 +16,7 @@ pub const TICK_HZ: u32 = 60;
 /// Duración de un tick en segundos (el original usa `Timer::time_elapsed()` variable).
 pub const TICK_DT: f32 = 1.0 / TICK_HZ as f32;
 
+#[derive(Clone, Debug)]
 pub struct World {
     pub map: Map,
     pub bombers: Vec<Bomber>,
@@ -46,6 +47,7 @@ pub struct World {
     pub(crate) next_map: Option<Map>,
 }
 
+#[derive(Clone, Debug)]
 pub(crate) struct ArrowState {
     tile: (usize, usize),
     dir: Dir,
@@ -54,6 +56,7 @@ pub(crate) struct ArrowState {
     chill: f32,
 }
 
+#[derive(Clone, Debug)]
 pub(crate) struct Trapped {
     bomb: Bomb,
     tile: (usize, usize),
@@ -145,6 +148,19 @@ impl World {
             rng,
             config,
         }
+    }
+
+    /// Huella de todo el estado de la simulación (FNV-1a de su representación `Debug`): dos mundos
+    /// con el mismo valor tienen exactamente el mismo estado, bit a bit en los `f32`. Sirve para
+    /// comprobar el determinismo y, más adelante, para detectar desincronizaciones en red.
+    /// Es lenta (formatea todo el mundo): no es para llamarla cada tick en producción.
+    pub fn state_hash(&self) -> u64 {
+        let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+        for b in format!("{self:?}").bytes() {
+            h ^= b as u64;
+            h = h.wrapping_mul(0x0100_0000_01b3);
+        }
+        h
     }
 
     /// Sucesos sonoros desde la última llamada (quien dibuja o suena los consume).

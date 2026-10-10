@@ -20,6 +20,8 @@ pub mod bomb;
 pub mod bomber;
 pub mod config;
 pub mod corpse;
+#[cfg(test)]
+mod determinism;
 pub mod disease;
 pub mod events;
 pub mod extra;
