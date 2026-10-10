@@ -15,7 +15,7 @@ cargo fmt
 
 - `crates/core` (`cb-core`): lógica pura, **sin dependencias gráficas ni de ventana**. Determinista, paso
   fijo (`TICK_HZ` = 60). Mapa (`map.rs`), movimiento por píxeles compartido por bombers y bombas
-  (`movement.rs`, port de `GameObject::move_*`), vuelo en arco (`flight.rs`), bombers, enfermedades,
+  (`movement.rs`, port de `GameObject::move_*`), IA (`ai.rs`), vuelo en arco (`flight.rs`), bombers, enfermedades,
   bombas/explosiones, extras y `World::step` (`sim.rs`).
 - `crates/render` (`cb-render`): wgpu. Batcher de quads en resolución virtual 800x600 con letterbox,
   texturas (`load_texture`), hojas de sprites (`Sheet`), texto TrueType con atlas de glifos (`load_font`,
@@ -73,5 +73,6 @@ enum (`CurrentSurfaceTexture`), `VertexState.buffers` es `&[Option<_>]`, `bind_g
 4. ~~Extras, enfermedades, hielo/flechas/trampas, ciclo de partida (rondas, reloj, marcador)~~
    → pendiente: cadáveres y partes que salen volando al morir.
 5. ~~Menús completos~~ (intro, principal, opciones, Player Setup, Map Selection, Map Editor, Credits, Help)
-   → pendiente: IA (los puestos con IA/ratón/joystick quedan quietos), sonido, sangre en los créditos.
+   → IA hecha (`ai.rs`, port de Controller_AI; AI_mass usa la misma). Pendiente: ratón/joystick (quedan
+   quietos), equipos, sonido, cadáveres y sangre en los créditos.
 6. Partículas (compute), sprites con IA.

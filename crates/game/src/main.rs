@@ -163,11 +163,17 @@ impl App {
         let mut world = World::with_config(map, seed, self.config.clone());
         world.playlist = Some(list);
         world.start_match(players.len());
+        // IA (`Controller_AI`); `AI_mass` comparte de momento la misma.
+        for (i, p) in players.iter().enumerate() {
+            if matches!(p.controller, ControllerKind::Ai | ControllerKind::AiMass) {
+                world.set_ai(i, true);
+            }
+        }
         self.keymaps = players
             .iter()
             .map(|p| match p.controller {
                 ControllerKind::Keymap(n) => Some(n as usize - 1),
-                // TODO(IA, ratón, joystick): sin controlador todavía; el bomber se queda quieto.
+                // La IA va aparte (`World::ais`). TODO(ratón, joystick): sin controlador todavía.
                 _ => None,
             })
             .collect();
