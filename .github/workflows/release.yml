@@ -34,7 +34,7 @@ jobs:
           tar czf "$name.tar.gz" "$name"
           sha256sum "$name.tar.gz" > "$name.tar.gz.sha256"
           echo "ASSET=$name.tar.gz" >> "$GITHUB_ENV"
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v3
         with:
           files: |
             ${{ env.ASSET }}
