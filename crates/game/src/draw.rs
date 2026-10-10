@@ -424,6 +424,8 @@ fn draw_game(r: &mut Renderer, a: &Assets, w: &World, players: &[Player]) {
         }
     }
 
+    // Partículas (chispas, cascotes, humo) sobre el mapa y bajo el reloj del observador.
+    r.particle_layer();
     draw_observer(r, a, w);
 }
 

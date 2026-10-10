@@ -6,6 +6,7 @@ use winit::keyboard::KeyCode;
 
 use crate::assets::Assets;
 use crate::draw::{srgb_rgba, text_color};
+use crate::video::Video;
 
 /// Identificador de cada entrada; el programa decide qué hacer con las acciones.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -47,6 +48,10 @@ pub enum Id {
     KidsMode,
     CorpseParts,
     Shake,
+    // Efectos de la GPU (no existen en el original; se guardan en `Video`).
+    Bloom,
+    Particles,
+    Crt,
     MapEditor,
     Credits,
     Help,
@@ -306,6 +311,9 @@ impl Menu {
             value(Id::CorpseParts, 0, 100),
         );
         m.add(gr, Id::Shake, "Shaky Explosions", value(Id::Shake, 0, 1));
+        m.add(gr, Id::Bloom, "Glow (Bloom)", value(Id::Bloom, 0, 1));
+        m.add(gr, Id::Particles, "Particles", value(Id::Particles, 0, 1));
+        m.add(gr, Id::Crt, "CRT Filter", value(Id::Crt, 0, 1));
 
         m.add(
             o,
@@ -340,6 +348,15 @@ impl Menu {
         for item in &mut self.items {
             if let Kind::Value { min, max, value } = &mut item.kind {
                 *value = item.id.get(c).clamp(*min, *max);
+            }
+        }
+    }
+
+    /// Lee los valores de las opciones gráficas.
+    pub fn sync_video(&mut self, v: &Video) {
+        for item in &mut self.items {
+            if let (Kind::Value { min, max, value }, Some(x)) = (&mut item.kind, v.get(item.id)) {
+                *value = x.clamp(*min, *max);
             }
         }
     }

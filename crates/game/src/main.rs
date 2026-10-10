@@ -15,6 +15,8 @@ mod paths;
 mod player_setup;
 mod screen;
 mod shots;
+mod sparks;
+mod video;
 
 use std::collections::HashSet;
 use std::path::PathBuf;
@@ -42,6 +44,8 @@ use map_select::MapSelect;
 use menu::{Id, Menu, Outcome};
 use player_setup::PlayerSetup;
 use screen::Flow;
+use sparks::Sparks;
+use video::Video;
 
 /// Los tres teclados del original (izquierda, derecha, arriba, abajo, bomba):
 /// flechas + Enter, WASD + Tab, e IJKL + Espacio.
@@ -93,6 +97,9 @@ struct App {
     screen: Screen,
     config: Config,
     config_path: Option<PathBuf>,
+    /// Opciones gráficas (efectos de la GPU), en su propio archivo.
+    video: Video,
+    video_path: Option<PathBuf>,
     menu: Menu,
     world: Option<World>,
     players: Vec<Player>,
@@ -101,6 +108,8 @@ struct App {
     joysticks: Joysticks,
     assets: Option<Assets>,
     ui: Ui,
+    /// Ráfagas de partículas que salen de lo que pasa en la partida.
+    sparks: Sparks,
     keys: HashSet<KeyCode>,
     /// Pulsaciones de bomba pendientes de consumir en el próximo tick (una por flanco y teclado).
     bomb_latch: [bool; 3],
@@ -232,6 +241,7 @@ impl App {
         self.world = Some(world);
         self.bomb_latch = [false; 3];
         self.ui = Ui::new();
+        self.sparks = Sparks::new();
         self.screen = Screen::Game;
         self.paused = false;
         self.audio.set_music(self.play_music);
@@ -367,6 +377,17 @@ impl App {
             }
             Outcome::Activate(Id::Help) => self.screen = Screen::Help(Help::new()),
             Outcome::Activate(_) | Outcome::None => {}
+            Outcome::Changed(id, v) if self.video.set(id, v) => {
+                self.menu.sync_video(&self.video);
+                if let Some((_, r)) = self.gfx.as_mut() {
+                    r.set_effects(self.video.effects());
+                }
+                if let Some(path) = &self.video_path {
+                    if let Err(e) = self.video.save(path) {
+                        eprintln!("no se pudo guardar las opciones gráficas en {path:?}: {e}");
+                    }
+                }
+            }
             Outcome::Changed(id, v) => {
                 id.set(&mut self.config, v);
                 self.menu.sync(&self.config);
@@ -432,6 +453,7 @@ impl ApplicationHandler for App {
             .with_inner_size(LogicalSize::new(800.0, 600.0));
         let window = Arc::new(el.create_window(attrs).expect("ventana"));
         let mut renderer = pollster::block_on(Renderer::new(window.clone()));
+        renderer.set_effects(self.video.effects());
         self.assets = Some(Assets::load(&mut renderer));
         self.gfx = Some((window, renderer));
         self.last = Instant::now();
@@ -473,7 +495,9 @@ impl ApplicationHandler for App {
                         if self.paused || self.scripted {
                             self.acc = 0.0;
                         }
+                        let mut played = 0.0;
                         while self.acc >= dt {
+                            played += dt as f32;
                             let inputs = self.inputs();
                             if let Some(w) = self.world.as_mut() {
                                 w.step(&inputs);
@@ -485,6 +509,15 @@ impl ApplicationHandler for App {
                         }
                         if let Some(w) = &self.world {
                             self.ui.update(w, frame as f32);
+                            if let Some((_, r)) = self.gfx.as_mut() {
+                                self.sparks.update(r, w, played);
+                                r.advance_particles(played);
+                                r.set_shake(if w.shake > 0 && !self.paused {
+                                    1.0
+                                } else {
+                                    0.0
+                                });
+                            }
                         }
                     }
                     Screen::Credits(c) => {
@@ -510,6 +543,11 @@ impl ApplicationHandler for App {
                         }
                     }
                     _ => self.acc = 0.0,
+                }
+                if !matches!(self.screen, Screen::Game) {
+                    if let Some((_, r)) = self.gfx.as_mut() {
+                        r.set_shake(0.0);
+                    }
                 }
 
                 let time = self.started.elapsed().as_secs_f32();
@@ -564,14 +602,17 @@ fn main() {
         _ => None,
     };
 
-    let (config_path, config) = if shots_dir.is_some() {
-        (None, Config::default())
+    let (config_path, config, video_path, video) = if shots_dir.is_some() {
+        (None, Config::default(), None, Video::default())
     } else {
         let path = Config::default_path();
         let config = path.as_deref().map(Config::load).unwrap_or_default();
-        (path, config)
+        let video_path = Video::default_path();
+        let video = video_path.as_deref().map(Video::load).unwrap_or_default();
+        (path, config, video_path, video)
     };
-    let menu = Menu::new(&config);
+    let mut menu = Menu::new(&config);
+    menu.sync_video(&video);
 
     let el = EventLoop::new().unwrap();
     el.set_control_flow(ControlFlow::Poll);
@@ -583,6 +624,8 @@ fn main() {
         },
         config,
         config_path,
+        video,
+        video_path,
         menu,
         world: None,
         players: Vec::new(),
@@ -590,6 +633,7 @@ fn main() {
         joysticks: Joysticks::new(),
         assets: None,
         ui: Ui::new(),
+        sparks: Sparks::new(),
         keys: HashSet::new(),
         bomb_latch: [false; 3],
         gfx: None,
