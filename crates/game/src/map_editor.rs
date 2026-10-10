@@ -147,6 +147,15 @@ impl MapEditor {
         }
     }
 
+    /// ¿Se está escribiendo un nombre o un autor (y no editando casillas)?
+    pub fn is_typing(&self) -> bool {
+        match &self.state {
+            State::NewName(_) => true,
+            State::Edit(ed) => matches!(ed.sub, Sub::Author(_) | Sub::Help),
+            State::Select => false,
+        }
+    }
+
     pub fn key(&mut self, code: KeyCode, typed: Option<&str>, a: &Assets, _c: &Config) -> Flow {
         match &mut self.state {
             State::Select => return self.key_select(code, a),

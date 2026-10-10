@@ -44,6 +44,7 @@ pub struct Credits {
     offset: f32,
     up: bool,
     down: bool,
+    stopped: bool,
 }
 
 impl Credits {
@@ -52,6 +53,8 @@ impl Credits {
             offset: OFFSET_START,
             up: false,
             down: false,
+            // Empieza en el extremo superior sin que suene el tope.
+            stopped: true,
         }
     }
 
@@ -70,7 +73,8 @@ impl Credits {
     }
 
     /// Arriba/abajo aceleran el desplazamiento; el texto se detiene en los extremos.
-    pub fn update(&mut self, dt: f32) {
+    /// Devuelve `true` en el tick en que el texto llega a un extremo (suena `Credits_stop`).
+    pub fn update(&mut self, dt: f32) -> bool {
         let speed = if self.up {
             -SCROLL_SPEED
         } else if self.down {
@@ -80,6 +84,10 @@ impl Credits {
         };
         // `yoffset -= speed * dt`: velocidad positiva = el texto sube.
         self.offset = (self.offset - speed * dt).clamp(Self::end(), OFFSET_START);
+        let at_end = self.offset <= Self::end() || self.offset >= OFFSET_START;
+        let just_stopped = at_end && !self.stopped;
+        self.stopped = at_end;
+        just_stopped
     }
 
     pub fn draw(&self, r: &mut Renderer, a: &Assets) {

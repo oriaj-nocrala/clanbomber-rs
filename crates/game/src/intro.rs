@@ -6,6 +6,7 @@ use cb_render::{Align, Renderer};
 use winit::keyboard::KeyCode;
 
 use crate::assets::Assets;
+use crate::audio::Sfx;
 use crate::draw::text_color;
 use crate::screen::Flow;
 
@@ -23,6 +24,9 @@ pub struct Intro {
     wait: f32,
     rng: Rng,
     finished: bool,
+    /// Sonido pendiente de reproducir (lo recoge quien llama).
+    pub sound: Option<Sfx>,
+    fade_started: bool,
 }
 
 impl Intro {
@@ -34,6 +38,8 @@ impl Intro {
             wait: 0.0,
             rng: Rng::new(seed),
             finished: false,
+            sound: None,
+            fade_started: false,
         }
     }
 
@@ -59,6 +65,11 @@ impl Intro {
         if self.time < BLACK_TIME {
             return self.flow();
         }
+        if !self.fade_started {
+            // `Intro_winlevel` suena al empezar a aparecer el logo.
+            self.fade_started = true;
+            self.sound = Some(Sfx::WinLevel);
+        }
         if self.alpha < 255.0 {
             self.alpha = (self.alpha + dt * FADE_SPEED).min(255.0);
             return self.flow();
@@ -68,7 +79,11 @@ impl Intro {
         while self.wait <= 0.0 && !self.finished {
             if self.typed >= LEGEND.chars().count() {
                 self.finished = true;
+                self.sound = Some(Sfx::MenuBack);
                 break;
+            }
+            if LEGEND.chars().nth(self.typed) != Some(' ') {
+                self.sound = Some(Sfx::Typewriter);
             }
             self.typed += 1;
             self.wait += (self.rng.below(100_000) + 80_000) as f32 / 1_000_000.0;

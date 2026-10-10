@@ -1,4 +1,5 @@
 mod assets;
+mod audio;
 mod credits;
 mod draw;
 mod help;
@@ -24,6 +25,7 @@ use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::window::{Window, WindowId};
 
 use assets::Assets;
+use audio::{Audio, Sfx};
 use credits::Credits;
 use draw::{Player, Ui};
 use help::Help;
@@ -89,6 +91,7 @@ struct App {
     last: Instant,
     acc: f64,
     started: Instant,
+    audio: Audio,
 }
 
 /// Mapas que trae el juego (de solo lectura).
@@ -245,6 +248,11 @@ impl App {
         repeat: bool,
     ) {
         // Las pantallas de menú manejan sus propias teclas y vuelven al menú con `Flow::Back`.
+        let was_typing = match &self.screen {
+            Screen::PlayerSetup(s) => s.is_editing(),
+            Screen::MapEditor(s) => s.is_typing(),
+            _ => false,
+        };
         let (flow, save) = match &mut self.screen {
             Screen::PlayerSetup(s) => s.key(code, text, &mut self.config),
             Screen::MapSelect(s) => s.key(code, &mut self.config),
@@ -269,11 +277,37 @@ impl App {
         }
         if flow == Flow::Back {
             self.screen = Screen::Menu;
+        } else if !was_typing {
+            let sound = match (&self.screen, code) {
+                // Moverse: `Menu_break`; elegir o cambiar algo: `Menu_clear`.
+                (Screen::PlayerSetup(_), c) if is_arrow(c) => Some(Sfx::Break),
+                (Screen::PlayerSetup(_), _) if save => Some(Sfx::Clear),
+                (Screen::MapSelect(_), _) if save => Some(Sfx::Clear),
+                (Screen::MapSelect(_), KeyCode::ArrowUp | KeyCode::ArrowDown) => Some(Sfx::Break),
+                (Screen::MapEditor(_), c) if is_arrow(c) => Some(Sfx::Break),
+                (Screen::MapEditor(_), KeyCode::Escape | KeyCode::Backspace) => None,
+                (Screen::MapEditor(_), _) => Some(Sfx::Clear),
+                _ => None,
+            };
+            if let Some(sfx) = sound {
+                self.audio.play(sfx);
+            }
         }
     }
 
     fn menu_key(&mut self, el: &ActiveEventLoop, code: KeyCode) {
-        match self.menu.key(code) {
+        let at_root = self.menu.at_root();
+        let outcome = self.menu.key(code);
+        match (&outcome, code) {
+            (_, KeyCode::ArrowUp | KeyCode::ArrowDown) | (Outcome::Changed(..), _) => {
+                self.audio.play(Sfx::Break)
+            }
+            // Entrar en un submenú o volver a uno superior.
+            (Outcome::None, KeyCode::Enter | KeyCode::NumpadEnter) => self.audio.play(Sfx::Clear),
+            (Outcome::None, KeyCode::Escape) if !at_root => self.audio.play(Sfx::Clear),
+            _ => {}
+        }
+        match outcome {
             Outcome::Activate(Id::Quit) => el.exit(),
             Outcome::Activate(Id::StartLocal) => self.start_game(),
             Outcome::Activate(Id::PlayerSetup) => {
@@ -377,6 +411,9 @@ impl ApplicationHandler for App {
                             let inputs = self.inputs();
                             if let Some(w) = self.world.as_mut() {
                                 w.step(&inputs);
+                                for e in w.take_events() {
+                                    self.audio.play(e.into());
+                                }
                             }
                             self.acc -= dt;
                         }
@@ -384,9 +421,17 @@ impl ApplicationHandler for App {
                             self.ui.update(w, frame as f32);
                         }
                     }
-                    Screen::Credits(c) => c.update(frame as f32),
+                    Screen::Credits(c) => {
+                        if c.update(frame as f32) {
+                            self.audio.play(Sfx::CreditsStop);
+                        }
+                    }
                     Screen::Intro(i) => {
-                        if i.update(frame as f32) == Flow::Back {
+                        let done = i.update(frame as f32) == Flow::Back;
+                        if let Some(sfx) = i.sound.take() {
+                            self.audio.play(sfx);
+                        }
+                        if done {
                             self.screen = Screen::Menu;
                         }
                     }
@@ -459,6 +504,14 @@ fn main() {
         last: Instant::now(),
         acc: 0.0,
         started: Instant::now(),
+        audio: Audio::new(),
     })
     .unwrap();
+}
+
+fn is_arrow(code: KeyCode) -> bool {
+    matches!(
+        code,
+        KeyCode::ArrowUp | KeyCode::ArrowDown | KeyCode::ArrowLeft | KeyCode::ArrowRight
+    )
 }

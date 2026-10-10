@@ -39,6 +39,11 @@ impl PlayerSetup {
         }
     }
 
+    /// ¿Se está escribiendo un nombre?
+    pub fn is_editing(&self) -> bool {
+        self.edit.is_some()
+    }
+
     /// Devuelve a dónde ir y si hay que guardar la configuración.
     pub fn key(&mut self, code: KeyCode, typed: Option<&str>, c: &mut Config) -> (Flow, bool) {
         if let Some(edit) = self.edit.as_mut() {

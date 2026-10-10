@@ -344,6 +344,10 @@ impl Menu {
         }
     }
 
+    pub fn at_root(&self) -> bool {
+        self.current == 0
+    }
+
     /// Vuelve a la raíz con la primera fila seleccionada.
     #[cfg(test)]
     fn reset(&mut self) {

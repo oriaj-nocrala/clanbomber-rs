@@ -8,4 +8,5 @@ edition.workspace = true
 cb-core = { version = "0.1.0", path = "../core" }
 cb-render = { version = "0.1.0", path = "../render" }
 pollster = "1.0.1"
+rodio = "0.22.2"
 winit = "0.30.13"
