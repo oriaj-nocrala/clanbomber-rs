@@ -48,25 +48,57 @@ const KEYMAPS: [[KeyCode; 5]; 2] = [
     ],
 ];
 
-/// `GameObject::show(x, y, scale)`: sprite que se encoge hacia su centro mientras cae.
-/// `pos` es (x + 60, y + 40) del objeto y `offset_y` su `offset_y` del original.
-fn draw_falling(
+/// `GameObject::show(x, y, scale)`: sprite escalado alrededor de su centro (se encoge al caer,
+/// pulsa al estar enfermo). `pos` es (x + 60, y + 40) del objeto y `offset_y` su `offset_y`.
+fn draw_scaled(
     r: &mut Renderer,
     sheet: &Sheet,
     cell: u32,
     pos: (f32, f32),
     offset_y: f32,
     scale: f32,
+    alpha: f32,
 ) {
-    let scale = scale.clamp(0.0, 1.0);
     let x = (20.0 + pos.0 - 20.0 * scale).trunc();
     let y = (pos.1 + 20.0 + (-40.0 + offset_y) * scale - 20.0 * scale).trunc();
     r.sprite_tinted(
         sheet.tex,
         sheet.cell(cell),
         [x, y, sheet.cell_w * scale, sheet.cell_h * scale],
-        [1.0, 1.0, 1.0, scale],
+        [1.0, 1.0, 1.0, alpha],
     );
+}
+
+/// Objeto en vuelo: crece con `scale` y se ancla por abajo (fórmula de `GameObject::show` al volar).
+fn draw_flying(
+    r: &mut Renderer,
+    sheet: &Sheet,
+    cell: u32,
+    pos: (f32, f32),
+    scale: f32,
+    alpha: f32,
+) {
+    let x = (pos.0 + 20.0 - scale * 20.0).trunc();
+    let y = (pos.1 + 40.0 - scale * 40.0).trunc();
+    r.sprite_tinted(
+        sheet.tex,
+        sheet.cell(cell),
+        [x, y, sheet.cell_w * scale, sheet.cell_h * scale],
+        [1.0, 1.0, 1.0, alpha],
+    );
+}
+
+/// Al caer el objeto se encoge y se desvanece con su contador.
+fn draw_falling(
+    r: &mut Renderer,
+    sheet: &Sheet,
+    cell: u32,
+    pos: (f32, f32),
+    offset_y: f32,
+    fall: f32,
+) {
+    let s = fall.clamp(0.0, 1.0);
+    draw_scaled(r, sheet, cell, pos, offset_y, s, s);
 }
 
 struct App {
@@ -138,7 +170,7 @@ impl App {
                 r,
                 &sp.extras,
                 e.kind as u32,
-                (ox + e.x as f32, oy + e.y as f32),
+                (ox + e.x, oy + e.y),
                 40.0,
                 e.fall_countdown,
             );
@@ -167,8 +199,12 @@ impl App {
                 );
             }
         }
-        for e in self.world.extras().filter(|e| !e.falling) {
-            r.sheet_sprite(&sp.extras, e.kind as u32, ox + e.x as f32, oy + e.y as f32);
+        for e in self
+            .world
+            .extras()
+            .filter(|e| !e.falling && !e.flight.active)
+        {
+            r.sheet_sprite(&sp.extras, e.kind as u32, ox + e.x, oy + e.y);
         }
         for e in self.world.explosions() {
             // Índices de segmento: Explosion.h (EXPLODE_LEFT..EXPLODE_X); +anim (0, 7 o 14).
@@ -208,11 +244,18 @@ impl App {
                 );
             }
         }
-        for b in self.world.bombs().filter(|b| !b.falling && !b.flying) {
+        for b in self
+            .world
+            .bombs()
+            .filter(|b| !b.falling && !b.flight.active)
+        {
             // sprite_nr = color * 4 + frame (color = skin del bomber que la puso).
             let cell = b.owner as u32 * 4 + b.frame();
             r.sheet_sprite(&sp.bombs, cell, ox + b.x, oy + b.y);
         }
+        // Un bomber enfermo pulsa (Bomber::show): 2π cada ~314 ms (Timer::get_time() / 50).
+        let ms = self.world.tick as f64 * 1000.0 / cb_core::TICK_HZ as f64;
+        let pulse = ((ms / 50.0) % (2.0 * std::f64::consts::PI)).sin() as f32 * 0.15 + 1.0;
         for (b, sheet) in self
             .world
             .bombers
@@ -220,23 +263,40 @@ impl App {
             .zip(sp.bombers.iter().cycle())
             .filter(|(b, _)| !b.dead && !b.is_falling())
         {
-            r.sheet_sprite(
-                sheet,
-                b.sprite_nr(),
-                b.get_x() as f32 + BOMBER_OFFSET.0,
-                b.get_y() as f32 + BOMBER_OFFSET.1,
+            if b.is_diseased() {
+                let pos = (ox + b.get_x() as f32, oy + b.get_y() as f32);
+                draw_scaled(r, sheet, b.sprite_nr(), pos, BOMBER_OFFSET.1, pulse, 1.0);
+            } else {
+                r.sheet_sprite(
+                    sheet,
+                    b.sprite_nr(),
+                    b.get_x() as f32 + BOMBER_OFFSET.0,
+                    b.get_y() as f32 + BOMBER_OFFSET.1,
+                );
+            }
+        }
+        // Objetos en el aire (Z_FLYING): por encima de todo. Crecen hasta mitad de trayecto.
+        for b in self.world.bombs().filter(|b| b.flight.active) {
+            let cell = b.owner as u32 * 4 + b.frame();
+            draw_flying(
+                r,
+                &sp.bombs,
+                cell,
+                (ox + b.x, oy + b.y),
+                b.flight.scale(),
+                1.0,
             );
         }
-        // Bombas en el aire (Z_FLYING): por encima de todo. Crecen hasta el punto medio del vuelo.
-        for b in self.world.bombs().filter(|b| b.flying) {
-            let sf = (b.fly_progress * 3.14).sin() * (1.3 / b.fly_speed) + 1.0;
-            let x = (ox + b.x + 20.0 - sf * 20.0).trunc();
-            let y = (oy + b.y + 40.0 - sf * 40.0).trunc();
-            let cell = b.owner as u32 * 4 + b.frame();
-            r.sprite(
-                sp.bombs.tex,
-                sp.bombs.cell(cell),
-                [x, y, sp.bombs.cell_w * sf, sp.bombs.cell_h * sf],
+        for e in self.world.extras().filter(|e| e.flight.active) {
+            // opacity_scaled de los extras es 0xBB.
+            let pos = (ox + e.x, oy + e.y);
+            draw_flying(
+                r,
+                &sp.extras,
+                e.kind as u32,
+                pos,
+                e.flight.scale(),
+                187.0 / 255.0,
             );
         }
         r.render();
@@ -365,12 +425,7 @@ fn main() {
     let seed = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |d| d.as_nanos() as u64);
-    let mut world = World::with_seed(map, seed);
-    // TODO(enfermedades): sin su efecto implementado, que no caigan.
-    world.extra_config.joint = false;
-    world.extra_config.viagra = false;
-    world.extra_config.koks = false;
-    world.spawn_bombers(2);
+    let world = World::with_seed(map, seed);
     el.run_app(&mut App {
         world,
         sprites: None,
