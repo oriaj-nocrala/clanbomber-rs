@@ -134,87 +134,6 @@ fn load_buffers() -> HashMap<Sfx, SamplesBuffer> {
     map
 }
 
-/// Música de módulo (`bud.mod`) renderizada con libopenmpt, en bucle (`AudioSimpleSDL::playLoop`).
-struct ModSource {
-    module: openmpt::module::Module,
-    buf: Vec<f32>,
-    pos: usize,
-}
-
-const MUSIC_RATE: u32 = 44_100;
-/// Fotogramas por bloque de render.
-const MUSIC_CHUNK: usize = 4096;
-
-// SAFETY: el módulo de libopenmpt se usa siempre desde un único hilo a la vez (el del mezclador);
-// no comparte estado mutable con ningún otro objeto.
-unsafe impl Send for ModSource {}
-
-impl ModSource {
-    fn open(path: &std::path::Path) -> Option<Self> {
-        let mut data = std::fs::read(path).ok()?;
-        let module = openmpt::module::Module::create_from_memory(
-            &mut data,
-            openmpt::module::Logger::None,
-            &[],
-        )
-        .ok()?;
-        Some(ModSource {
-            module,
-            buf: Vec::with_capacity(MUSIC_CHUNK * 2),
-            pos: 0,
-        })
-    }
-
-    /// Renderiza el siguiente bloque; al terminar la canción vuelve al principio.
-    fn refill(&mut self) -> Option<()> {
-        for _ in 0..2 {
-            self.buf.clear();
-            let frames = self
-                .module
-                .read_interleaved_float_stereo(MUSIC_RATE as i32, &mut self.buf);
-            if frames > 0 {
-                // SAFETY: libopenmpt ha escrito `frames * 2` muestras en la capacidad reservada.
-                unsafe { self.buf.set_len(frames * 2) };
-                self.pos = 0;
-                return Some(());
-            }
-            self.module.set_position_seconds(0.0);
-        }
-        None
-    }
-}
-
-impl Iterator for ModSource {
-    type Item = f32;
-
-    fn next(&mut self) -> Option<f32> {
-        if self.pos >= self.buf.len() {
-            self.refill()?;
-        }
-        let s = self.buf[self.pos];
-        self.pos += 1;
-        Some(s)
-    }
-}
-
-impl Source for ModSource {
-    fn current_span_len(&self) -> Option<usize> {
-        None
-    }
-
-    fn channels(&self) -> rodio::ChannelCount {
-        rodio::nz!(2)
-    }
-
-    fn sample_rate(&self) -> rodio::SampleRate {
-        std::num::NonZero::new(MUSIC_RATE).expect("frecuencia no nula")
-    }
-
-    fn total_duration(&self) -> Option<std::time::Duration> {
-        None
-    }
-}
-
 pub struct Audio {
     /// Mientras viva, suena; sin dispositivo es `None`.
     device: Option<MixerDeviceSink>,
@@ -251,14 +170,20 @@ impl Audio {
             return;
         }
         let Some(dev) = &self.device else { return };
-        let path = wavs_dir().join("bud.mod");
-        match ModSource::open(&path) {
-            Some(src) => {
+        // bud.mod renderizado a Ogg Vorbis (assets/wavs/bud.ogg): suena igual en todos los sistemas
+        // sin necesitar un reproductor de módulos. Se repite hasta que se apaga (`playLoop`).
+        let path = wavs_dir().join("bud.ogg");
+        match std::fs::File::open(&path)
+            .map_err(|e| e.to_string())
+            .and_then(|f| {
+                Decoder::new_looped(std::io::BufReader::new(f)).map_err(|e| e.to_string())
+            }) {
+            Ok(src) => {
                 let player = Player::connect_new(dev.mixer());
                 player.append(src);
                 self.music = Some(player);
             }
-            None => eprintln!("no se pudo cargar la música {path:?}"),
+            Err(e) => eprintln!("no se pudo cargar la música {path:?}: {e}"),
         }
     }
 
@@ -285,18 +210,20 @@ mod tests {
     }
 
     #[test]
-    fn the_module_renders_audible_stereo_audio_and_loops() {
-        let mut src = ModSource::open(&wavs_dir().join("bud.mod")).expect("bud.mod");
-        // Unos segundos de audio: tiene que haber señal y nunca terminarse.
-        let n = MUSIC_RATE as usize * 2 * 5;
-        let samples: Vec<f32> = (&mut src).take(n).collect();
-        assert_eq!(samples.len(), n);
-        let peak = samples.iter().fold(0.0f32, |m, s| m.max(s.abs()));
+    fn the_music_decodes_to_audible_stereo_audio_and_loops() {
+        let path = wavs_dir().join("bud.ogg");
+        let open = || std::io::BufReader::new(std::fs::File::open(&path).expect("bud.ogg"));
+        let plain = Decoder::new(open()).expect("decodifica");
+        assert_eq!(plain.channels().get(), 2);
+        let first_secs: Vec<f32> = plain.take(44_100 * 2 * 5).collect();
+        let peak = first_secs.iter().fold(0.0f32, |m, s| m.max(s.abs()));
         assert!(peak > 0.01, "silencio: pico {peak}");
-        assert!(samples.iter().all(|s| s.is_finite()));
-        // Forzar el final de la canción: debe reiniciarse en vez de acabar.
-        src.module.set_position_seconds(1e6);
-        assert!(src.next().is_some(), "en bucle");
+        assert!(first_secs.iter().all(|s| s.is_finite()));
+
+        // La canción dura 156 s: pedir bastante más obliga a volver al principio.
+        let looped = Decoder::new_looped(open()).expect("en bucle");
+        let n = 44_100 * 2 * 170;
+        assert_eq!(looped.take(n).count(), n, "no se acaba");
     }
 
     #[test]

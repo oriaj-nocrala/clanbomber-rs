@@ -342,14 +342,10 @@ impl Config {
         c
     }
 
-    /// Carpeta de configuración del usuario (`$XDG_CONFIG_HOME` o `~/.config`) más el nombre del juego.
+    /// Archivo de configuración del usuario, en la carpeta de configuración de cada sistema
+    /// (`~/.config` en Linux, `~/Library/Application Support` en macOS, `%APPDATA%` en Windows).
     pub fn default_path() -> Option<std::path::PathBuf> {
-        let base = std::env::var_os("XDG_CONFIG_HOME")
-            .map(std::path::PathBuf::from)
-            .or_else(|| {
-                std::env::var_os("HOME").map(|h| std::path::Path::new(&h).join(".config"))
-            })?;
-        Some(base.join("clanbomber-rs").join("config.txt"))
+        Some(dirs::config_dir()?.join("clanbomber-rs").join("config.txt"))
     }
 
     /// Carga la configuración; si no existe o no se puede leer, la de por defecto.

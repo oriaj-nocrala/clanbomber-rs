@@ -1,3 +1,6 @@
+// En Windows la versión release no abre una consola detrás de la ventana.
+#![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
+
 mod assets;
 mod audio;
 mod credits;
@@ -14,7 +17,7 @@ mod screen;
 mod shots;
 
 use std::collections::HashSet;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -120,12 +123,11 @@ fn maps_dir() -> PathBuf {
     paths::assets_dir().join("maps")
 }
 
-/// Mapas del usuario (`$XDG_DATA_HOME/clanbomber-rs/maps` o `~/.local/share/...`): los que crea el
+/// Mapas del usuario, en la carpeta de datos de cada sistema (`~/.local/share/clanbomber-rs/maps` en
+/// Linux, `~/Library/Application Support/...` en macOS, `%APPDATA%\...` en Windows): los que crea el
 /// editor, que se pueden editar y borrar.
 fn user_maps_dir() -> PathBuf {
-    std::env::var_os("XDG_DATA_HOME")
-        .map(PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(|h| Path::new(&h).join(".local/share")))
+    dirs::data_dir()
         .unwrap_or_else(std::env::temp_dir)
         .join("clanbomber-rs")
         .join("maps")
