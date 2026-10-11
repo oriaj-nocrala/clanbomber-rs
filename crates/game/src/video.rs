@@ -15,6 +15,7 @@ pub struct Video {
     pub fire: bool,
     pub shockwaves: bool,
     pub sprite_fx: bool,
+    pub lighting: bool,
 }
 
 impl Default for Video {
@@ -27,6 +28,7 @@ impl Default for Video {
             fire: e.fire,
             shockwaves: e.shockwaves,
             sprite_fx: e.sprite_fx,
+            lighting: e.lighting,
         }
     }
 }
@@ -57,6 +59,7 @@ impl Video {
                 "fire" => v.fire = n != 0,
                 "shockwaves" => v.shockwaves = n != 0,
                 "sprite_fx" => v.sprite_fx = n != 0,
+                "lighting" => v.lighting = n != 0,
                 _ => {}
             }
         }
@@ -71,13 +74,14 @@ impl Video {
         std::fs::write(
             path,
             format!(
-                "bloom={}\nparticles={}\ncrt={}\nfire={}\nshockwaves={}\nsprite_fx={}\n",
+                "bloom={}\nparticles={}\ncrt={}\nfire={}\nshockwaves={}\nsprite_fx={}\nlighting={}\n",
                 b(self.bloom),
                 b(self.particles),
                 b(self.crt),
                 b(self.fire),
                 b(self.shockwaves),
-                b(self.sprite_fx)
+                b(self.sprite_fx),
+                b(self.lighting)
             ),
         )
     }
@@ -90,6 +94,7 @@ impl Video {
             fire: self.fire,
             shockwaves: self.shockwaves,
             sprite_fx: self.sprite_fx,
+            lighting: self.lighting,
         }
     }
 
@@ -102,6 +107,7 @@ impl Video {
             Id::FireShader => self.fire as i32,
             Id::Shockwaves => self.shockwaves as i32,
             Id::SpriteFx => self.sprite_fx as i32,
+            Id::Lighting => self.lighting as i32,
             _ => return None,
         })
     }
@@ -115,6 +121,7 @@ impl Video {
             Id::FireShader => self.fire = v != 0,
             Id::Shockwaves => self.shockwaves = v != 0,
             Id::SpriteFx => self.sprite_fx = v != 0,
+            Id::Lighting => self.lighting = v != 0,
             _ => return false,
         }
         true
@@ -136,6 +143,7 @@ mod tests {
             fire: false,
             shockwaves: true,
             sprite_fx: false,
+            lighting: true,
         };
         v.save(&path).unwrap();
         assert_eq!(Video::load(&path), v);

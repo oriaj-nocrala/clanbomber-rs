@@ -4,6 +4,7 @@
 
 mod fire;
 mod fx;
+mod light;
 mod text;
 
 use std::sync::Arc;
@@ -12,6 +13,7 @@ use winit::window::Window;
 
 pub use fire::Fire;
 pub use fx::{Burst, Effects, ParticleKind};
+pub use light::{Light, Lighting};
 pub use text::{Align, Font, FontError};
 
 pub const VIRTUAL_W: f32 = 800.0;
@@ -35,6 +37,8 @@ enum Batch {
     },
     /// Explosiones procedurales (`fire.wgsl`), en su orden de dibujo.
     Fire { first: u32, count: u32 },
+    /// Iluminación: multiplica lo dibujado hasta aquí por la luz (`light.wgsl`).
+    Light,
 }
 
 /// Hoja de sprites con celdas de tamaño fijo, numeradas en fila.
@@ -85,6 +89,7 @@ pub struct Renderer {
     textures: Vec<Texture>,
     batches: Vec<Batch>,
     fire: fire::FirePipeline,
+    light: light::LightPipeline,
     fires: Vec<fire::FireInstance>,
     vbuf: wgpu::Buffer,
     ibuf: wgpu::Buffer,
@@ -244,6 +249,7 @@ impl Renderer {
         );
         let particles = compute.then(|| fx::Particles::new(&device, &globals));
         let fire = fire::FirePipeline::new(&device, &globals, fx::SCENE_FORMAT);
+        let light = light::LightPipeline::new(&device, &globals, fx::SCENE_FORMAT);
         let mut r = Renderer {
             surface,
             device,
@@ -256,6 +262,7 @@ impl Renderer {
             textures: Vec::new(),
             batches: Vec::new(),
             fire,
+            light,
             fires: Vec::new(),
             vbuf,
             ibuf,
@@ -418,6 +425,25 @@ impl Renderer {
         );
     }
 
+    /// Luz puntual para la próxima llamada a [`lighting`](Self::lighting) de este fotograma.
+    pub fn light(&mut self, light: Light) {
+        // Una luz con NaN rellenaría su círculo entero de NaN en la escena.
+        let finite = light.intensity.is_finite() && light.radius.is_finite();
+        if finite && self.effects.lighting && self.light.lights.len() < light::MAX_LIGHTS {
+            self.light.lights.push(light);
+        }
+    }
+
+    /// Aplica la iluminación (ambiente, luces pedidas con [`light`](Self::light) y sombras de la
+    /// rejilla) a todo lo dibujado hasta ahora. No hace nada si está apagada.
+    pub fn lighting(&mut self, lighting: &Lighting) {
+        if !self.effects.lighting {
+            return;
+        }
+        self.light.upload(&self.device, &self.queue, lighting);
+        self.batches.push(Batch::Light);
+    }
+
     /// Onda expansiva que deforma la imagen en la composición final. `progress` va de 0 a 1 y
     /// `strength` escala radio y amplitud. Solo cuenta para el fotograma actual.
     pub fn shockwave(&mut self, center: [f32; 2], progress: f32, strength: f32) {
@@ -561,6 +587,7 @@ impl Renderer {
         self.batches.clear();
         self.fires.clear();
         self.waves.clear();
+        self.light.lights.clear();
         self.particle_layer = None;
     }
 
@@ -611,6 +638,10 @@ impl Renderer {
                 }
                 Batch::Fire { first, count } => {
                     self.fire.draw(&mut pass, first, count);
+                    bind_quads(&mut pass);
+                }
+                Batch::Light => {
+                    self.light.draw(&mut pass);
                     bind_quads(&mut pass);
                 }
             }

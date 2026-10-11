@@ -55,6 +55,7 @@ pub enum Id {
     FireShader,
     Shockwaves,
     SpriteFx,
+    Lighting,
     MapEditor,
     Credits,
     Help,
@@ -334,6 +335,12 @@ impl Menu {
             Id::SpriteFx,
             "Sprite Effects",
             value(Id::SpriteFx, 0, 1),
+        );
+        m.add(
+            gr,
+            Id::Lighting,
+            "Dynamic Lighting",
+            value(Id::Lighting, 0, 1),
         );
 
         m.add(

@@ -5,7 +5,7 @@
 use cb_core::{Phase, World, TILE_PIXELS};
 use cb_render::{Burst, ParticleKind, Renderer};
 
-use crate::draw::srgb_rgba;
+use crate::draw::{skin_color, speed_level, srgb_rgba, Player};
 
 /// Esquina del mapa en el lienzo virtual (offset 60, 40 del original).
 const ORIGIN: (f32, f32) = (60.0, 40.0);
@@ -48,7 +48,7 @@ impl Sparks {
 
     /// Lanza las ráfagas de lo que cambió desde la última llamada. `dt` son los segundos de
     /// juego transcurridos (0 en pausa: no sale nada nuevo).
-    pub fn update(&mut self, r: &mut Renderer, w: &World, dt: f32) {
+    pub fn update(&mut self, r: &mut Renderer, w: &World, players: &[Player], dt: f32) {
         if !matches!(w.phase, Phase::Playing) {
             self.tracking = false;
             return;
@@ -85,6 +85,7 @@ impl Sparks {
                 }
             }
             fuses(r, w);
+            speed_sparks(r, w, players);
         }
 
         self.tracking = true;
@@ -171,6 +172,33 @@ fn death(r: &mut Renderer, pos: [f32; 2], kids: bool) {
         size: 1.6,
         ..Burst::new(kind, pos, 60)
     });
+}
+
+/// Los bombers muy rápidos sueltan destellos de su color al correr.
+fn speed_sparks(r: &mut Renderer, w: &World, players: &[Player]) {
+    for (b, p) in w.bombers.iter().zip(players) {
+        let k = speed_level(b);
+        if k < 0.3 || b.dead || b.is_falling() || b.flight.active {
+            continue;
+        }
+        let c = skin_color(p.skin);
+        let boost = 1.5 + 2.5 * k;
+        r.emit(&Burst {
+            area: [8.0, 10.0],
+            color: [c[0] * boost, c[1] * boost, c[2] * boost, 1.0],
+            speed: [5.0, 25.0 + 40.0 * k],
+            life: [0.15, 0.25 + 0.3 * k],
+            size: 1.2 + 1.3 * k,
+            ..Burst::new(
+                ParticleKind::Glow,
+                [
+                    ORIGIN.0 + b.get_x() as f32 + 20.0,
+                    ORIGIN.1 + b.get_y() as f32 + 22.0,
+                ],
+                1 + (k * 3.0) as u32,
+            )
+        });
+    }
 }
 
 /// Las bombas a punto de estallar echan chispas por arriba, cada vez más.

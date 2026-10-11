@@ -89,7 +89,7 @@ impl App {
             // Las partículas avanzan al mismo reloj que la partida (para el GIF).
             if let Some((_, r)) = self.gfx.as_mut() {
                 let dt = ticks as f32 / cb_core::TICK_HZ as f32;
-                self.sparks.update(r, w, dt);
+                self.sparks.update(r, w, &self.players, dt);
                 r.advance_particles(dt);
                 if let Some(a) = &self.assets {
                     let skins: Vec<f32> = self

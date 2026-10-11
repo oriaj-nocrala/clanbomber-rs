@@ -43,17 +43,25 @@ const SKIN_COLORS: [(u8, u8, u8); 8] = [
     (70, 230, 90),
 ];
 
-/// Copia fantasma de un bomber rápido: posición de dibujo, celda y edad en segundos.
+/// Color de estela de un aspecto, en lineal.
+pub fn skin_color(skin: usize) -> [f32; 4] {
+    let (r, g, b) = SKIN_COLORS[skin % SKIN_COLORS.len()];
+    srgb_rgba(r, g, b, 255)
+}
+
+/// Copia fantasma de un bomber rápido: posición de dibujo, celda, edad y vida en segundos, y
+/// lo rápido que iba (0..1).
 struct Ghost {
     x: f32,
     y: f32,
     cell: u32,
     age: f32,
+    life: f32,
+    level: f32,
 }
 
-/// Cada cuánto deja una copia y cuánto dura (segundos).
-const GHOST_EVERY: f32 = 1.0 / 40.0;
-const GHOST_LIFE: f32 = 0.2;
+/// Cada cuánto deja una copia (segundos).
+const GHOST_EVERY: f32 = 1.0 / 60.0;
 
 /// Estado de la interfaz que no vive en el mundo.
 pub struct Ui {
@@ -65,9 +73,10 @@ pub struct Ui {
     ghost_timer: f32,
 }
 
-/// Un bomber deja estela con al menos dos patines o con la enfermedad de velocidad.
-fn is_fast(b: &cb_core::Bomber) -> bool {
-    b.speed >= 170 || b.disease.is_some_and(|d| d.kind == DiseaseKind::Fast)
+/// Qué tan rápido va un bomber, de 0 (velocidad base, 90 px/s) a 1. Un patín (130) apenas
+/// deja rastro; con varios la estela crece, y con koks (+600) llega al máximo.
+pub fn speed_level(b: &cb_core::Bomber) -> f32 {
+    ((b.speed as f32 - 110.0) / 380.0).clamp(0.0, 1.0)
 }
 
 impl Ui {
@@ -86,7 +95,7 @@ impl Ui {
         self.trails.resize_with(world.bombers.len(), Vec::new);
         for t in &mut self.trails {
             t.iter_mut().for_each(|g| g.age += dt);
-            t.retain(|g| g.age < GHOST_LIFE);
+            t.retain(|g| g.age < g.life);
         }
         self.ghost_timer -= dt;
         if self.ghost_timer > 0.0 || dt <= 0.0 {
@@ -94,7 +103,8 @@ impl Ui {
         }
         self.ghost_timer = GHOST_EVERY;
         for ((b, t), &offset_y) in world.bombers.iter().zip(&mut self.trails).zip(skins) {
-            if b.dead || b.is_falling() || b.flight.active || !is_fast(b) {
+            let level = speed_level(b);
+            if b.dead || b.is_falling() || b.flight.active || level <= 0.0 {
                 continue;
             }
             let (x, y) = (
@@ -110,6 +120,9 @@ impl Ui {
                 y,
                 cell: b.sprite_nr(),
                 age: 0.0,
+                // Más velocidad, estela más larga: de 0.06 s a 0.4 s.
+                life: 0.06 + 0.34 * level,
+                level,
             });
         }
     }
@@ -441,15 +454,17 @@ fn draw_game(r: &mut Renderer, a: &Assets, w: &World, ui: &Ui, players: &[Player
                 continue;
             }
             let skin = &a.skins[p.skin];
-            let (cr, cg, cb) = SKIN_COLORS[p.skin % SKIN_COLORS.len()];
-            let c = srgb_rgba(cr, cg, cb, 255);
+            let c = skin_color(p.skin);
             for g in trail {
-                let fade = 1.0 - g.age / GHOST_LIFE;
+                let fade = 1.0 - g.age / g.life;
+                // A más velocidad, más opaca y más brillante (con el bloom llega a resplandecer).
+                let glow = 1.0 + 2.2 * g.level;
+                let alpha = (0.25 + 0.45 * g.level) * fade * fade;
                 r.sprite_silhouette(
                     skin.sheet.tex,
                     skin.sheet.cell(g.cell),
                     [g.x, g.y, skin.sheet.cell_w, skin.sheet.cell_h],
-                    [c[0] * 1.6, c[1] * 1.6, c[2] * 1.6, 0.55 * fade * fade],
+                    [c[0] * glow, c[1] * glow, c[2] * glow, alpha],
                 );
             }
         }
@@ -556,6 +571,8 @@ fn draw_game(r: &mut Renderer, a: &Assets, w: &World, ui: &Ui, players: &[Player
         }
     }
 
+    // Luz dinámica sobre todo lo anterior; las partículas, que ya brillan, van encima.
+    crate::lighting::apply(r, w, players);
     // Partículas (chispas, cascotes, humo) sobre el mapa y bajo el reloj del observador.
     r.particle_layer();
     draw_observer(r, a, w);

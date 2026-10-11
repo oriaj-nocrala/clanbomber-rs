@@ -9,6 +9,7 @@ const SPARK: u32 = 0u;   // chispa: aditiva, brilla (alimenta el bloom), se esti
 const DEBRIS: u32 = 1u;  // trozo: cuadrado opaco con rozamiento (cajas, sangre)
 const SMOKE: u32 = 2u;   // humo: disco suave que crece y sube
 const CONFETTI: u32 = 3u; // confeti (modo niños): trozo de color al azar
+const GLOW: u32 = 4u;     // destello aditivo del color pedido (estelas)
 
 struct Particle {
     pos: vec2<f32>,
@@ -109,7 +110,7 @@ fn sim(@builtin(global_invocation_id) id: vec3<u32>) {
     }
     let dt = params.dt;
     switch p.kind {
-        case SPARK: {
+        case SPARK, GLOW: {
             p.vel *= exp(-3.5 * dt);
         }
         case SMOKE: {
@@ -170,6 +171,10 @@ fn vs(
             // Del blanco amarillento al rojo según se apaga.
             let c = color.rgb * mix(vec3<f32>(1.0, 0.35, 0.15), vec3<f32>(1.0), t * t);
             out.color = vec4<f32>(c * t, 0.0);
+        }
+        case GLOW: {
+            size *= 0.5 + 0.5 * t;
+            out.color = vec4<f32>(color.rgb * t, 0.0);
         }
         case SMOKE: {
             size *= 1.0 + 2.0 * (1.0 - t);
