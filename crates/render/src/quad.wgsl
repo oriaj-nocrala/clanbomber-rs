@@ -20,6 +20,9 @@ const BURN: u32 = 5u;
 // modo y el centro y radio de la quemadura en `color.rgb` (px virtuales), para no tocar el
 // formato del vértice.
 const REVEAL: u32 = 6u;
+// Cronómetro dibujado entero aquí (sin textura): `uv` va de 0 a 1 sobre el quad y `color` lleva
+// la vuelta de la aguja de segundos (r), la de la subesfera (g), la alarma (b) y el alfa (a).
+const WATCH: u32 = 7u;
 
 struct VsOut {
     @builtin(position) pos: vec4<f32>,
@@ -83,9 +86,132 @@ fn burn_threshold(mode: u32) -> f32 {
     return mix(-0.2, 1.2, progress);
 }
 
+// Cobertura de una forma con distancia con signo `d` (negativa dentro), suavizada en `aa`.
+fn fill(d: f32, aa: f32) -> f32 {
+    return clamp(0.5 - d / aa, 0.0, 1.0);
+}
+
+fn sd_box(p: vec2<f32>, half_size: vec2<f32>, radius: f32) -> f32 {
+    let q = abs(p) - half_size + radius;
+    return length(max(q, vec2<f32>(0.0))) + min(max(q.x, q.y), 0.0) - radius;
+}
+
+fn sd_segment(p: vec2<f32>, a: vec2<f32>, b: vec2<f32>) -> f32 {
+    let pa = p - a;
+    let ba = b - a;
+    let h = clamp(dot(pa, ba) / dot(ba, ba), 0.0, 1.0);
+    return length(pa - ba * h);
+}
+
+// Gira `p` para que el eje -y apunte a `angle` (0 arriba, en sentido horario).
+fn to_local(p: vec2<f32>, angle: f32) -> vec2<f32> {
+    let c = cos(angle);
+    let s = sin(angle);
+    return vec2<f32>(c * p.x + s * p.y, -s * p.x + c * p.y);
+}
+
+// Metal cromado: `shade` es cuánto mira la pieza hacia la luz (arriba a la izquierda).
+fn chrome(shade: f32) -> vec3<f32> {
+    let base = mix(vec3<f32>(0.22, 0.23, 0.26), vec3<f32>(0.86, 0.87, 0.9), clamp(shade, 0.0, 1.0));
+    let glint = pow(clamp(shade, 0.0, 1.0), 12.0) * 0.9;
+    return base + glint;
+}
+
+// Capa sobre lo acumulado (premultiplicado): `acc.rgb` color por alfa, `acc.a` alfa.
+fn over(acc: vec4<f32>, color: vec3<f32>, alpha: f32) -> vec4<f32> {
+    return vec4<f32>(acc.rgb * (1.0 - alpha) + color * alpha, acc.a * (1.0 - alpha) + alpha);
+}
+
+// Cronómetro antiguo. Unidades: radio de la caja = 1, centro de la esfera en el origen, y
+// hacia abajo; el quad mide 2 x 2.4 (la corona sobresale por arriba).
+fn stopwatch(uv: vec2<f32>, aa: f32, params: vec4<f32>) -> vec4<f32> {
+    let p = vec2<f32>((uv.x - 0.5) * 2.0, uv.y * 2.4 - 1.4);
+    let light = normalize(vec2<f32>(-0.55, -0.85));
+    let r = length(p);
+    var acc = vec4<f32>(0.0);
+
+    // Sombra sobre el fondo.
+    let shadow = 1.0 - smoothstep(0.9, 1.12, length(p - vec2<f32>(0.07, 0.09)));
+    acc = over(acc, vec3<f32>(0.0), shadow * 0.45);
+
+    // Argolla, vástago y botón de la corona.
+    let bow = abs(length(p - vec2<f32>(0.0, -1.27)) - 0.12) - 0.032;
+    let bow_shade = 0.55 + 0.45 * dot(normalize(p - vec2<f32>(0.0, -1.27)), light);
+    acc = over(acc, chrome(bow_shade), fill(bow, aa));
+    let stem = sd_box(p - vec2<f32>(0.0, -1.04), vec2<f32>(0.07, 0.1), 0.01);
+    acc = over(acc, chrome(0.75 - abs(p.x) * 6.0), fill(stem, aa));
+    let crown = sd_box(p - vec2<f32>(0.0, -1.14), vec2<f32>(0.115, 0.055), 0.03);
+    acc = over(acc, chrome(0.9 - abs(p.x) * 4.0 - (p.y + 1.14) * 3.0), fill(crown, aa));
+
+    // Botones laterales, a 40 grados de la corona.
+    for (var side = -1.0; side <= 1.0; side += 2.0) {
+        let q = to_local(p, side * 0.7);
+        let post = sd_box(q - vec2<f32>(0.0, -1.06), vec2<f32>(0.055, 0.09), 0.01);
+        acc = over(acc, chrome(0.7 - abs(q.x) * 7.0), fill(post, aa));
+        let cap = sd_box(q - vec2<f32>(0.0, -1.15), vec2<f32>(0.09, 0.045), 0.025);
+        acc = over(acc, chrome(0.85 - abs(q.x) * 5.0), fill(cap, aa));
+    }
+
+    // Caja: anillo cromado, más claro hacia la luz y con una banda de brillo a lo largo.
+    let n = p / max(r, 1e-4);
+    let t = clamp((1.0 - r) / 0.16, 0.0, 1.0);
+    let facing = dot(n, light) * (1.0 - 2.0 * t);
+    let band = 0.12 * sin(atan2(p.y, p.x) * 3.0 + 1.3);
+    // El filo exterior, más oscuro, le da volumen y la separa del fondo.
+    let case_color = chrome(0.5 + 0.45 * facing + band) * (1.0 - 0.35 * smoothstep(0.93, 1.0, r));
+    acc = over(acc, case_color, fill(r - 1.0, aa));
+
+    // Esfera, algo hundida (sombra junto al bisel). Con la alarma se tiñe de rojo.
+    let alarm = params.z;
+    var dial = vec3<f32>(0.8, 0.8, 0.77) * (1.0 - 0.1 * r * r);
+    dial *= 1.0 - 0.45 * smoothstep(0.7, 0.84, r) * (0.5 + 0.5 * dot(n, -light));
+    dial = mix(dial, vec3<f32>(0.85, 0.16, 0.12), alarm * 0.55);
+    acc = over(acc, dial, fill(r - 0.84, aa));
+
+    // Marcas: 60 finas y 12 largas.
+    let angle = atan2(p.x, -p.y);
+    let step60 = 6.2831853 / 60.0;
+    let idx = round(angle / step60);
+    let major = abs(idx % 5.0) < 0.5;
+    let tick = to_local(p, idx * step60);
+    let inner = select(0.73, 0.62, major);
+    let width = select(0.011, 0.028, major);
+    let mark = sd_box(tick - vec2<f32>(0.0, -(inner + 0.79) * 0.5), vec2<f32>(width, (0.79 - inner) * 0.5), 0.0);
+    acc = over(acc, vec3<f32>(0.08), fill(mark, aa) * 0.9);
+
+    // Subesfera de los minutos.
+    let sub_center = vec2<f32>(0.0, -0.36);
+    let sp = p - sub_center;
+    acc = over(acc, vec3<f32>(0.1), fill(abs(length(sp) - 0.2) - 0.008, aa) * 0.8);
+    let sub_dir = to_local(vec2<f32>(0.0, -1.0), -params.y * 6.2831853);
+    acc = over(acc, vec3<f32>(0.08), fill(sd_segment(sp, vec2<f32>(0.0), sub_dir * 0.16) - 0.012, aa));
+    acc = over(acc, vec3<f32>(0.08), fill(length(sp) - 0.03, aa));
+
+    // Aguja de los segundos (con su sombra), contrapeso y tapa central.
+    let dir = to_local(vec2<f32>(0.0, -1.0), -params.x * 6.2831853);
+    let shadow_hand = sd_segment(p - vec2<f32>(0.035, 0.05), -dir * 0.2, dir * 0.78) - 0.02;
+    acc = over(acc, vec3<f32>(0.0), (1.0 - smoothstep(-0.02, 0.06, shadow_hand)) * 0.3 * (1.0 - smoothstep(0.84, 0.86, r)));
+    let red = vec3<f32>(0.85, 0.08, 0.06) * (1.0 + alarm * 0.8);
+    let hand = sd_segment(p, -dir * 0.2, dir * 0.78) - mix(0.024, 0.012, clamp(dot(p, dir) / 0.78, 0.0, 1.0));
+    acc = over(acc, red, fill(hand, aa));
+    acc = over(acc, red, fill(length(p + dir * 0.17) - 0.05, aa));
+    acc = over(acc, red, fill(r - 0.075, aa));
+    acc = over(acc, vec3<f32>(0.25, 0.02, 0.02), fill(r - 0.028, aa));
+
+    // Cristal: reflejo suave arriba a la izquierda y un filo de luz junto al bisel.
+    let gloss = (1.0 - smoothstep(0.0, 0.5, length((p - vec2<f32>(-0.28, -0.38)) * vec2<f32>(1.0, 1.6))));
+    let rim = smoothstep(0.7, 0.8, r) * (1.0 - smoothstep(0.8, 0.84, r)) * max(dot(n, light), 0.0);
+    acc = over(acc, vec3<f32>(1.0), (gloss * 0.16 + rim * 0.45) * fill(r - 0.84, aa));
+
+    return vec4<f32>(acc.rgb / max(acc.a, 1e-4), acc.a * params.w);
+}
+
 @fragment
 fn fs(in: VsOut) -> @location(0) vec4<f32> {
     let texel = textureSample(tex, samp, in.uv);
+    // Tamaño de un píxel en las unidades del cronómetro (las derivadas, fuera del `switch`).
+    let duv = fwidth(in.uv);
+    let watch_aa = max(duv.x * 2.0, duv.y * 2.4) * 1.2;
     switch in.mode & 0xffffu {
         case SILHOUETTE: {
             return vec4<f32>(in.color.rgb, texel.a * in.color.a);
@@ -128,6 +254,9 @@ fn fs(in: VsOut) -> @location(0) vec4<f32> {
             let keep = step(f, th + 0.03);
             let scorch = smoothstep(th - 0.1, th + 0.03, f);
             return vec4<f32>(texel.rgb * mix(1.0, 0.3, scorch), texel.a * in.color.a * keep);
+        }
+        case WATCH: {
+            return stopwatch(in.uv, watch_aa, in.color);
         }
         case HUE: {
             let c = rotate_hue(texel.rgb, g.time * 4.0);

@@ -33,7 +33,8 @@ cargo fmt
   dramática; `post.wgsl`).
   `quad.wgsl` tiene modos por vértice: normal, silueta (estelas), brillo de hielo, tono girando (enfermedad),
   reflejo (`sprite_reflection`: invertido y recortado a las casillas de hielo) y quemar/revelar
-  (`sprite_burn`/`sprite_reveal`: el avance va en los 16 bits altos del modo y el centro en el color).
+  (`sprite_burn`/`sprite_reveal`: el avance va en los 16 bits altos del modo y el centro en el color)
+  y el cronómetro del HUD dibujado entero por SDF (`Renderer::stopwatch`, con "Sprite Effects").
   `light.rs`/`light.wgsl`: iluminación dinámica multiplicativa con sombras (raymarch sobre la rejilla de
   muros/cajas, `Renderer::light` + `Renderer::lighting`). `fire.rs`/`fire.wgsl`: explosiones
   procedurales (cruz por SDF + fbm, grosor según la potencia; `Renderer::fire`), intercaladas con los sprites. Sin compute shaders (GL antiguo) se

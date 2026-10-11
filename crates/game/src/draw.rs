@@ -667,6 +667,36 @@ fn draw_reflections(r: &mut Renderer, a: &Assets, w: &World, players: &[Player],
     }
 }
 
+/// Cronómetro antiguo en lugar del sprite del reloj: la aguja roja marca los segundos que quedan
+/// y la subesfera los minutos. Los últimos 10 s late con cada segundo; al agotarse suena como un
+/// despertador (se sacude) y la esfera se queda roja.
+fn draw_stopwatch(r: &mut Renderer, time_left: f32) {
+    let left = time_left.max(0.0);
+    let (mut scale, mut angle, mut alarm) = (1.0, 0.0, 0.0);
+    if time_left > 0.0 && time_left < 10.0 {
+        // Un golpe al empezar cada segundo, que se apaga enseguida.
+        let since_tick = 1.0 - time_left.fract();
+        let beat = (-since_tick * 9.0).exp();
+        scale += 0.1 * beat;
+        alarm = 0.35 * beat;
+    } else if time_left <= 0.0 {
+        let ringing = -time_left;
+        let fade = (1.0 - ringing / 2.5).max(0.0);
+        angle = (ringing * 48.0).sin() * 0.16 * fade;
+        alarm = 0.6 + 0.4 * fade * (ringing * 24.0).sin().abs();
+    }
+    let (w, h) = (32.0 * scale, 38.4 * scale);
+    // Centro de la esfera en (619, 23), donde estaba el del sprite.
+    let rect = [619.0 - w / 2.0, 23.0 - h * 1.4 / 2.4, w, h];
+    r.stopwatch(
+        rect,
+        angle,
+        (left % 60.0) / 60.0,
+        (left / 60.0) / 10.0,
+        alarm,
+    );
+}
+
 /// El observador, el reloj y el aviso de "HURRY UP" (`Observer::show`).
 fn draw_observer(r: &mut Renderer, a: &Assets, w: &World) {
     let o = &w.observer;
@@ -689,12 +719,16 @@ fn draw_observer(r: &mut Renderer, a: &Assets, w: &World) {
         r.sheet_sprite(&a.observer, 0, (o.x + off_x).trunc(), (o.y + off_y).trunc());
     }
 
-    if w.time_left() > 0.0 {
+    if r.effects().sprite_fx {
+        draw_stopwatch(r, w.time_left());
+    } else if w.time_left() > 0.0 {
         r.sheet_sprite(&a.observer, 1, 600.0, 1.0);
-        let secs = (w.time_left() as i32).to_string();
-        r.text(&a.font_big, &secs, 650.0, 3.0, text_color(), Align::Left);
     } else {
         r.sheet_sprite(&a.observer, 2, 600.0, 1.0);
+    }
+    if w.time_left() > 0.0 {
+        let secs = (w.time_left() as i32).to_string();
+        r.text(&a.font_big, &secs, 650.0, 3.0, text_color(), Align::Left);
     }
     if w.hurry_up() {
         r.quad(300.0, 250.0, 200.0, 30.0, [0.0, 0.0, 0.0, 0.5]);
