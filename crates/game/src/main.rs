@@ -5,6 +5,7 @@ mod assets;
 mod audio;
 mod credits;
 mod draw;
+mod dying;
 mod haze;
 mod help;
 mod interp;

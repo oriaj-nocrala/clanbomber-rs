@@ -31,8 +31,9 @@ cargo fmt
   (`particles.wgsl`, anillo de 16384; la CPU solo manda `Burst`s), bloom por compute (`bloom.wgsl`, a 400x300)
   y composición con CRT opcional, aberración al temblar, ondas expansivas, aire caliente y cámara (`Camera`: zoom, foco y desaturación
   dramática; `post.wgsl`).
-  `quad.wgsl` tiene modos por vértice: normal, silueta (estelas), brillo de hielo, tono girando (enfermedad) y
-  reflejo (`sprite_reflection`: invertido y recortado a las casillas de hielo).
+  `quad.wgsl` tiene modos por vértice: normal, silueta (estelas), brillo de hielo, tono girando (enfermedad),
+  reflejo (`sprite_reflection`: invertido y recortado a las casillas de hielo) y quemar/revelar
+  (`sprite_burn`/`sprite_reveal`: el avance va en los 16 bits altos del modo y el centro en el color).
   `light.rs`/`light.wgsl`: iluminación dinámica multiplicativa con sombras (raymarch sobre la rejilla de
   muros/cajas, `Renderer::light` + `Renderer::lighting`). `fire.rs`/`fire.wgsl`: explosiones
   procedurales (cruz por SDF + fbm, grosor según la potencia; `Renderer::fire`), intercaladas con los sprites. Sin compute shaders (GL antiguo) se
@@ -43,6 +44,8 @@ cargo fmt
   `heat.rs`/`heat.wgsl` (render): máscara de calor de 400x300 que suma rectángulos suaves
   (`Renderer::heat`); `post.wgsl` desplaza la imagen con ruido que sube, sin filtrar y con algo de
   dispersión de color. `haze.rs` (juego) pone el calor: llamas, brasas que suben al apagarse y mechas.
+  `dying.rs`: transición de la muerte (destello, el bomber se quema y el cadáver aparece por los mismos
+  píxeles, y sube su silueta); va con "Sprite Effects".
   `weather.rs`: clima por tema (nieve, hojas, esporas, ceniza, ascuas, motas), simulado en CPU y dibujado
   antes de la iluminación para que la luz lo alumbre (las ascuas brillan solas, después); va con "Particles".
   `steps.rs`: polvo al frenar o girar y escarcha al patinar en hielo (compara posiciones entre ticks).
