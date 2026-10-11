@@ -27,6 +27,8 @@ pub struct Effects {
     pub shockwaves: bool,
     /// Estelas a mucha velocidad, brillo del hielo y tinte de enfermedad.
     pub sprite_fx: bool,
+    /// Iluminación dinámica con sombras.
+    pub lighting: bool,
 }
 
 impl Default for Effects {
@@ -38,6 +40,7 @@ impl Default for Effects {
             fire: true,
             shockwaves: true,
             sprite_fx: true,
+            lighting: true,
         }
     }
 }
@@ -53,6 +56,8 @@ pub enum ParticleKind {
     Smoke = 2,
     /// Confeti de colores al azar.
     Confetti = 3,
+    /// Destello aditivo del color pedido, sin virar al rojo (estelas).
+    Glow = 4,
 }
 
 /// Ráfaga de partículas, en coordenadas virtuales (800x600).
@@ -688,6 +693,7 @@ mod tests {
             ("bloom.wgsl", include_str!("bloom.wgsl")),
             ("post.wgsl", include_str!("post.wgsl")),
             ("fire.wgsl", include_str!("fire.wgsl")),
+            ("light.wgsl", include_str!("light.wgsl")),
         ] {
             let module = naga::front::wgsl::parse_str(src)
                 .unwrap_or_else(|e| panic!("{name}: {}", e.emit_to_string(src)));
@@ -727,6 +733,18 @@ mod tests {
         assert_eq!(
             module.types[h].inner.size(module.to_ctx()) as usize,
             std::mem::size_of::<super::PostParams>()
+        );
+
+        let src = include_str!("light.wgsl");
+        let module = naga::front::wgsl::parse_str(src).unwrap();
+        let (h, _) = module
+            .types
+            .iter()
+            .find(|(_, t)| t.name.as_deref() == Some("Lights"))
+            .unwrap();
+        assert_eq!(
+            module.types[h].inner.size(module.to_ctx()) as usize,
+            std::mem::size_of::<crate::light::LightUniform>()
         );
     }
 }

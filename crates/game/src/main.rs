@@ -8,6 +8,7 @@ mod draw;
 mod help;
 mod intro;
 mod joystick;
+mod lighting;
 mod map_editor;
 mod map_select;
 mod menu;
@@ -518,7 +519,7 @@ impl ApplicationHandler for App {
                                 self.ui.update_trails(w, played, &skins);
                             }
                             if let Some((_, r)) = self.gfx.as_mut() {
-                                self.sparks.update(r, w, played);
+                                self.sparks.update(r, w, &self.players, played);
                                 r.advance_particles(played);
                                 r.set_shake(if w.shake > 0 && !self.paused {
                                     1.0
