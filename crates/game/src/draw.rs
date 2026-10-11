@@ -108,10 +108,7 @@ impl Ui {
             if b.dead || b.is_falling() || b.flight.active || level <= 0.0 {
                 continue;
             }
-            let (x, y) = (
-                b.get_x() as f32 + BOMBER_OFFSET_X,
-                b.get_y() as f32 + offset_y,
-            );
+            let (x, y) = (b.x + BOMBER_OFFSET_X, b.y + offset_y);
             // Solo si se ha movido desde la última copia.
             if t.last().is_some_and(|g| g.x == x && g.y == y) {
                 continue;
@@ -160,8 +157,10 @@ fn draw_scaled(
     scale: f32,
     alpha: f32,
 ) {
-    let x = (20.0 + pos.0 - 20.0 * scale).trunc();
-    let y = (pos.1 + 20.0 + (-40.0 + offset_y) * scale - 20.0 * scale).trunc();
+    // Sin truncar: el shader ajusta los vértices a la rejilla de píxeles físicos (con la
+    // interpolación entre ticks, el movimiento va por debajo del píxel virtual).
+    let x = 20.0 + pos.0 - 20.0 * scale;
+    let y = pos.1 + 20.0 + (-40.0 + offset_y) * scale - 20.0 * scale;
     r.sprite_tinted(
         sheet.tex,
         sheet.cell(cell),
@@ -179,8 +178,8 @@ fn draw_flying(
     scale: f32,
     alpha: f32,
 ) {
-    let x = (pos.0 + 20.0 - scale * 20.0).trunc();
-    let y = (pos.1 + 40.0 - scale * 40.0).trunc();
+    let x = pos.0 + 20.0 - scale * 20.0;
+    let y = pos.1 + 40.0 - scale * 40.0;
     r.sprite_tinted(
         sheet.tex,
         sheet.cell(cell),
@@ -363,7 +362,7 @@ fn draw_game(
     for (b, p) in w.bombers.iter().zip(players) {
         let skin = &a.skins[p.skin];
         if !b.dead && b.is_falling() {
-            let pos = (ox + b.get_x() as f32, oy + b.get_y() as f32);
+            let pos = (ox + b.x, oy + b.y);
             draw_falling(
                 r,
                 &skin.sheet,
@@ -378,7 +377,7 @@ fn draw_game(
     for o in &w.objects {
         if let Object::Corpse(c) = o {
             let skin = &a.skins[players[c.owner].skin];
-            let pos = (ox + c.get_x() as f32, oy + c.get_y() as f32);
+            let pos = (ox + c.x, oy + c.y);
             if c.falling {
                 draw_falling(
                     r,
@@ -392,8 +391,8 @@ fn draw_game(
                 r.sheet_sprite(
                     &skin.sheet,
                     c.sprite_nr,
-                    c.get_x() as f32 + BOMBER_OFFSET_X,
-                    c.get_y() as f32 + skin.offset_y,
+                    c.x + BOMBER_OFFSET_X,
+                    c.y + skin.offset_y,
                 );
             }
         }
@@ -508,12 +507,12 @@ fn draw_game(
             let pos = (ox + b.x, b.y + skin.offset_y);
             draw_flying(r, &skin.sheet, b.sprite_nr(), pos, b.flight.scale(), 1.0);
         } else if b.is_diseased() {
-            let pos = (ox + b.get_x() as f32, oy + b.get_y() as f32);
+            let pos = (ox + b.x, oy + b.y);
             let stoned = b.disease.is_some_and(|d| d.kind == DiseaseKind::Stoned);
             if sprite_fx && stoned {
                 // Joint: el bomber cambia de color en ciclo (además de pulsar).
-                let x = (20.0 + pos.0 - 20.0 * pulse).trunc();
-                let y = (pos.1 + 20.0 + (-40.0 + skin.offset_y) * pulse - 20.0 * pulse).trunc();
+                let x = 20.0 + pos.0 - 20.0 * pulse;
+                let y = pos.1 + 20.0 + (-40.0 + skin.offset_y) * pulse - 20.0 * pulse;
                 let sheet = &skin.sheet;
                 r.sprite_hue(
                     sheet.tex,
@@ -536,8 +535,8 @@ fn draw_game(
             r.sheet_sprite(
                 &skin.sheet,
                 b.sprite_nr(),
-                b.get_x() as f32 + BOMBER_OFFSET_X,
-                b.get_y() as f32 + skin.offset_y,
+                b.x + BOMBER_OFFSET_X,
+                b.y + skin.offset_y,
             );
         }
     }
@@ -545,7 +544,7 @@ fn draw_game(
     for o in &w.objects {
         if let Object::CorpsePart(p) = o {
             if !p.flight.active {
-                let (x, y) = (p.x.trunc() + 60.0, p.y.trunc() + 40.0);
+                let (x, y) = (p.x + 60.0, p.y + 40.0);
                 let s = &a.corpse_parts;
                 r.sprite_tinted(
                     s.tex,
@@ -648,8 +647,8 @@ fn draw_reflections(r: &mut Renderer, a: &Assets, w: &World, players: &[Player],
         }
         let skin = &a.skins[p.skin];
         let dst = [
-            b.get_x() as f32 + BOMBER_OFFSET_X,
-            b.get_y() as f32 + skin.offset_y,
+            b.x + BOMBER_OFFSET_X,
+            b.y + skin.offset_y,
             skin.sheet.cell_w,
             skin.sheet.cell_h,
         ];

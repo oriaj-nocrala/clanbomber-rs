@@ -1,4 +1,5 @@
-struct Globals { screen: vec2<f32>, time: f32, _pad: f32 };
+// `scale`: píxeles físicos por píxel virtual (tamaño de la escena / 800).
+struct Globals { screen: vec2<f32>, time: f32, scale: f32 };
 @group(0) @binding(0) var<uniform> g: Globals;
 @group(1) @binding(0) var tex: texture_2d<f32>;
 @group(1) @binding(1) var samp: sampler;
@@ -29,8 +30,11 @@ fn vs(
     @location(2) color: vec4<f32>,
     @location(3) mode: u32,
 ) -> VsOut {
+    // Las posiciones pueden ir entre píxeles virtuales (interpolación entre ticks): se ajustan
+    // a la rejilla de píxeles físicos para que el pixel art no tiemble ni pierda filas.
+    let snapped = round(p * g.scale) / g.scale;
     // Coordenadas virtuales en píxeles (origen arriba-izquierda) -> clip space.
-    let ndc = vec2<f32>(p.x / g.screen.x * 2.0 - 1.0, 1.0 - p.y / g.screen.y * 2.0);
+    let ndc = vec2<f32>(snapped.x / g.screen.x * 2.0 - 1.0, 1.0 - snapped.y / g.screen.y * 2.0);
     return VsOut(vec4<f32>(ndc, 0.0, 1.0), uv, color, p, mode);
 }
 

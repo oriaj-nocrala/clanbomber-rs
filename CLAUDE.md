@@ -36,7 +36,9 @@ cargo fmt
   muros/cajas, `Renderer::light` + `Renderer::lighting`). `fire.rs`/`fire.wgsl`: explosiones
   procedurales (cruz por SDF + fbm, grosor según la potencia; `Renderer::fire`), intercaladas con los sprites. Sin compute shaders (GL antiguo) se
   ve como el original. Un test valida los WGSL con naga (la CI no tiene GPU).
-- `crates/game` (`cb-game`): binario winit. Loop con acumulador de tiempo → `World::step` a 60 Hz → dibujo.
+- `crates/game` (`cb-game`): binario winit. Loop con acumulador de tiempo → `World::step` a 60 Hz → dibujo
+  interpolado entre el último tick y el anterior (`interp.rs`: copia del mundo con posiciones a medio camino;
+  `quad.wgsl` ajusta los vértices a píxeles físicos), para monitores de más de 60 Hz.
   `assets.rs` carga texturas y fuentes; `draw.rs` dibuja mapa, HUD y marcador; `sparks.rs` compara el
   mundo con el fotograma anterior y lanza ráfagas de partículas (explosiones, cajas, muertes, mechas);
   `video.rs` son las opciones gráficas (bloom, partículas, CRT, explosiones por shader, ondas, efectos
