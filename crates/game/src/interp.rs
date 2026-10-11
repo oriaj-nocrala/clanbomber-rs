@@ -95,11 +95,15 @@ mod tests {
 
     fn world() -> World {
         let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/maps");
-        let path = std::fs::read_dir(dir)
+        // El orden de `read_dir` depende del sistema de archivos: se ordena para que la prueba
+        // use el mismo mapa en todas partes.
+        let mut maps: Vec<_> = std::fs::read_dir(dir)
             .unwrap()
             .filter_map(|e| e.ok().map(|e| e.path()))
-            .find(|p| p.extension().is_some_and(|x| x == "map"))
-            .unwrap();
+            .filter(|p| p.extension().is_some_and(|x| x == "map"))
+            .collect();
+        maps.sort();
+        let path = maps.into_iter().next().unwrap();
         let mut w = World::with_seed(Map::load(path).unwrap(), 1);
         w.start_match(2);
         w
@@ -112,23 +116,44 @@ mod tests {
         for _ in 0..300 {
             w.step(&[Input::default(), Input::default()]);
         }
-        let before = Snapshot::of(&w);
-        let x0 = w.bombers[0].x;
-        let right = Input {
-            right: true,
-            ..Input::default()
-        };
-        w.step(&[right, Input::default()]);
-        let x1 = w.bombers[0].x;
-        assert_ne!(
-            x0, x1,
-            "el bomber debe haberse movido para que la prueba diga algo"
-        );
+        // La primera dirección en la que el bomber 0 puede andar desde donde aparece.
+        let dirs = [
+            Input {
+                right: true,
+                ..Input::default()
+            },
+            Input {
+                left: true,
+                ..Input::default()
+            },
+            Input {
+                down: true,
+                ..Input::default()
+            },
+            Input {
+                up: true,
+                ..Input::default()
+            },
+        ];
+        let (before, p0, w) = dirs
+            .iter()
+            .find_map(|&dir| {
+                let mut w = w.clone();
+                let before = Snapshot::of(&w);
+                let p0 = (w.bombers[0].x, w.bombers[0].y);
+                w.step(&[dir, Input::default()]);
+                let moved = (w.bombers[0].x, w.bombers[0].y) != p0;
+                moved.then_some((before, p0, w))
+            })
+            .expect("el bomber debe poder moverse en alguna dirección");
+        let p1 = (w.bombers[0].x, w.bombers[0].y);
         let v = view(&w, &before, 0.5);
-        assert!((v.bombers[0].x - (x0 + x1) / 2.0).abs() < 1e-4);
+        assert!((v.bombers[0].x - (p0.0 + p1.0) / 2.0).abs() < 1e-4);
+        assert!((v.bombers[0].y - (p0.1 + p1.1) / 2.0).abs() < 1e-4);
         // El mundo real no cambia.
-        assert_eq!(w.bombers[0].x, x1);
-        assert_eq!(view(&w, &before, 1.0).bombers[0].x, x1);
+        assert_eq!((w.bombers[0].x, w.bombers[0].y), p1);
+        let end = view(&w, &before, 1.0);
+        assert_eq!((end.bombers[0].x, end.bombers[0].y), p1);
     }
 
     #[test]
