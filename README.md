@@ -13,7 +13,7 @@ Up to 8 players, AI opponents, gamepads, 33 maps, power-ups, diseases, ice, trap
 
 ![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20Windows%20%7C%20macOS-FCC624?style=flat-square&logo=github&logoColor=black)
 [![Release](https://img.shields.io/github/v/release/oriaj-nocrala/clanbomber-rs?style=flat-square&logo=github&logoColor=white&label=release)](https://github.com/oriaj-nocrala/clanbomber-rs/releases/latest)
-![Tests](https://img.shields.io/badge/tests-130%2B-3FB950?style=flat-square&logo=rust&logoColor=white)
+![Tests](https://img.shields.io/badge/tests-150%2B-3FB950?style=flat-square&logo=rust&logoColor=white)
 ![Clippy](https://img.shields.io/badge/clippy-clean-3FB950?style=flat-square&logo=rust&logoColor=white)
 ![Deterministic](https://img.shields.io/badge/simulation-deterministic-8957E5?style=flat-square)
 [![Last commit](https://img.shields.io/github/last-commit/oriaj-nocrala/clanbomber-rs?style=flat-square&logo=git&logoColor=white)](https://github.com/oriaj-nocrala/clanbomber-rs/commits/main)
@@ -36,7 +36,8 @@ ClanBomber is a shared-screen Bomberman: mazes of boxes and walls, bombs that ex
 you stronger… or put you on a cocaine rush. This project is a **faithful Rust port** of the original game (the SDL
 fork by [viti95](https://github.com/viti95/ClanBomber2) was the executable reference): same rules, same maps, same
 graphics and sounds, but with a clean, well-tested simulation core and a modern **wgpu** renderer (Vulkan, Metal,
-DX12). It builds and passes its test suite on **Linux, Windows and macOS** in CI; day-to-day play-testing happens on
+DX12) that brings the 1999 sprites into 2026 with shaders: lighting, procedural fire, GPU particles, weather, slow
+motion… all optional, and none of it touches the rules. It builds and passes its test suite on **Linux, Windows and macOS** in CI; day-to-day play-testing happens on
 Linux.
 
 <table>
@@ -73,6 +74,32 @@ Linux.
 <td align="center"><sub>Scoreboard with trophies</sub></td>
 </tr>
 </table>
+
+## 🌋 1999 game, 2026 graphics
+
+<div align="center">
+<img src="docs/img/slow-motion.gif" alt="Slow motion on the death that decides the round" width="480">
+
+<sub>The death that decides the round, in slow motion: the camera frames the victim, the bomb and the killer.</sub>
+</div>
+
+Everything is drawn on top of the original sprites and can be switched off in **Options → Graphic Options**; with
+everything off (or on old GL without compute shaders) it looks like the original.
+
+- **Dynamic lighting with shadows**: fire, pulsing bomb fuses, bomber halos and glowing power-ups light the maze, and
+  walls and boxes cast shadows.
+- **Procedural explosions** drawn by a shader (thicker with more power), with **shockwaves**, **heat haze** rising
+  from the flames and embers, screen shake with chromatic aberration.
+- **GPU particles** simulated in a *compute shader* and **bloom**, plus an optional **CRT** filter.
+- **Weather per theme**: snow, falling leaves, spores, ash, embers or dust motes, lit by the scene.
+- **Ice reflections** and shine, frost when sliding, dust clouds when braking or turning, trails that grow with
+  speed.
+- **Textured debris** from destroyed boxes and power-ups, and power-ups that pop when picked up.
+- **Death transition**: a flash, the bomber burns away from the chest out, the corpse appears through the same
+  pixels and a soul floats up.
+- **Slow motion** on the round-deciding death, with spotlights on who died, the bomb and who placed it.
+- **Antique stopwatch** in the HUD and **crisp text** at any resolution (signed distance fields).
+- **Interpolated rendering** for monitors above 60 Hz; the simulation stays at a fixed 60 Hz and deterministic.
 
 ## 🎮 Features
 
@@ -152,7 +179,8 @@ Your settings and your own maps live in your system's config / data folders (`~/
 cargo run --release -p cb-game -- --screenshots docs/img
 ```
 
-Walks through the game's screens, saves a PNG of each and builds a GIF of an AI match (needs ImageMagick). It renders
+Walks through the game's screens, saves a PNG of each and builds two GIFs, an AI match and a slow-motion kill (needs
+ImageMagick). It renders
 off-screen, so it never captures your desktop.
 
 ## 🧱 Architecture
@@ -160,7 +188,8 @@ off-screen, so it never captures your desktop.
 ```
 crates/
 ├── core/     cb-core    Pure simulation: map, bombers, bombs, power-ups, AI, rounds… No graphics, no audio.
-├── render/   cb-render  2D renderer on wgpu: quad batching, glyph-atlas text, PNG capture.
+├── render/   cb-render  2D renderer on wgpu: quad batching, SDF text, compute particles, bloom, lighting,
+│                        procedural fire, post-processing and PNG capture.
 └── game/     cb-game    Window (winit), menus, drawing, audio, gamepads and the main loop.
 ```
 
@@ -168,7 +197,7 @@ The core knows nothing about windows or sound: it emits `GameEvent`s that the bi
 renderer only reads the `World` state. That makes it testable without a GPU:
 
 ```bash
-cargo test        # 130+ tests: rules, AI, rounds, teams, menus, gamepads…
+cargo test        # 150+ tests: rules, AI, rounds, teams, menus, gamepads…
 ```
 
 Every gameplay rule cites, in a comment, the original source file it was ported from. CI runs formatting, Clippy
@@ -176,7 +205,7 @@ Every gameplay rule cites, in a comment, the original source file it was ported 
 
 ## 🛣️ Roadmap
 
-- [ ] GPU particles with a *compute shader* (explosions, smoke, blood).
+- [x] GPU particles with a *compute shader*, bloom, dynamic lighting and the rest of the 2026 look.
 - [ ] AI-upscaled sprites and 3D sprites.
 - [ ] Online play with *rollback* (the simulation is already deterministic).
 - [ ] Web build (wgpu → WebGPU / WASM).
@@ -203,10 +232,32 @@ ClanBomber es un Bomberman de pantalla compartida: laberintos de cajas y muros, 
 que te hacen más fuerte… o te ponen a tope de cocaína. Este proyecto es **un port fiel a Rust** del juego original
 (el fork SDL de [viti95](https://github.com/viti95/ClanBomber2) fue la referencia ejecutable): mismas reglas, mismos
 mapas, mismos gráficos y sonidos, pero con un núcleo de simulación limpio y testeado y un renderer moderno sobre
-**wgpu**. Compila y pasa sus tests en **Linux, Windows y macOS** (CI); las pruebas jugando son sobre todo en Linux.
+**wgpu** que trae los sprites de 1999 al 2026 a punta de shaders: iluminación, fuego procedural, partículas en la GPU,
+clima, cámara lenta… todo opcional y sin tocar las reglas. Compila y pasa sus tests en **Linux, Windows y macOS** (CI); las pruebas jugando son sobre todo en Linux.
 
 Las capturas de arriba son las mismas: menú, partidas con distintos temas, marcadores, configuración de jugadores,
 selección de mapas y editor.
+
+### 🌋 Juego de 1999, gráficos de 2026
+
+El GIF de la cámara lenta de arriba es la muerte que decide la ronda: la cámara encuadra a la víctima, la bomba y al
+asesino. Todo se dibuja encima de los sprites originales y se apaga en **Options → Graphic Options**; sin efectos (o
+en GL antiguo, sin compute shaders) se ve como el original.
+
+- **Iluminación dinámica con sombras**: el fuego, las mechas que laten, los halos de los bombers y los extras
+  alumbran el laberinto, y muros y cajas hacen sombra.
+- **Explosiones procedurales** por shader (más gruesas con más potencia), con **ondas expansivas**, **aire caliente**
+  que sube de las llamas y las brasas, y temblor con aberración de color.
+- **Partículas en la GPU** simuladas por *compute shader* y **bloom**, más un filtro **CRT** opcional.
+- **Clima por tema**: nieve, hojas, esporas, ceniza, ascuas o motas de polvo, iluminado por la escena.
+- **Reflejos y brillo en el hielo**, escarcha al patinar, polvo al frenar o girar y estelas que crecen con la
+  velocidad.
+- **Trozos con textura** de las cajas y extras destruidos, y extras que saltan al recogerlos.
+- **Transición de la muerte**: destello, el bomber se quema desde el pecho, el cadáver aparece por los mismos píxeles
+  y sube su alma.
+- **Cámara lenta** en la muerte que decide la ronda, con focos sobre quien murió, la bomba y quien la puso.
+- **Cronómetro antiguo** en el HUD y **texto nítido** a cualquier resolución (campos de distancia).
+- **Dibujo interpolado** para monitores de más de 60 Hz; la simulación sigue a 60 Hz fijos y determinista.
 
 ### 🎮 Características
 
@@ -267,21 +318,22 @@ La configuración y tus mapas se guardan en las carpetas de configuración y de 
 otra carpeta de recursos.
 
 Para sacar las capturas: `cargo run --release -p cb-game -- --screenshots docs/img` (renderiza fuera de pantalla, no
-captura tu escritorio).
+captura tu escritorio; los dos GIF necesitan ImageMagick).
 
 ### 🧱 Arquitectura
 
 - `crates/core` (`cb-core`): simulación pura (mapa, bombers, bombas, extras, IA, rondas…), sin gráficos ni audio.
-- `crates/render` (`cb-render`): renderer 2D sobre wgpu con lotes de quads, texto con atlas de glifos y captura a PNG.
+- `crates/render` (`cb-render`): renderer 2D sobre wgpu con lotes de quads, texto SDF, partículas por compute, bloom,
+  iluminación, fuego procedural, posproceso y captura a PNG.
 - `crates/game` (`cb-game`): ventana (winit), menús, dibujo, audio, mandos y el bucle de juego.
 
-El núcleo emite `GameEvent`s que el binario convierte en sonido, así que se prueba sin GPU (`cargo test`, más de 130
+El núcleo emite `GameEvent`s que el binario convierte en sonido, así que se prueba sin GPU (`cargo test`, más de 150
 tests). Cada regla cita el archivo del original del que se portó. La integración continua pasa formato, Clippy (los
 avisos son errores), tests y compilación release en cada push.
 
 ### 🛣️ Siguientes pasos
 
-Partículas por *compute shader*, reescalado de sprites con IA y sprites 3D, juego en línea con *rollback* (la
+Hecho: partículas por *compute shader*, bloom, iluminación y el resto del aspecto 2026. Pendiente: reescalado de sprites con IA y sprites 3D, juego en línea con *rollback* (la
 simulación ya es determinista) y versión web (WebGPU / WASM).
 
 ### 📜 Licencia y créditos
