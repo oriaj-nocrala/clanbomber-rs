@@ -5,6 +5,7 @@ mod assets;
 mod audio;
 mod credits;
 mod draw;
+mod haze;
 mod help;
 mod interp;
 mod intro;
@@ -630,7 +631,7 @@ impl ApplicationHandler for App {
                                 (None, None) => world.clone(),
                             },
                             &self.ui,
-                            &self.sparks.shards,
+                            &self.sparks,
                             &self.players,
                             self.paused,
                         ),
