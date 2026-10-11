@@ -26,6 +26,10 @@ fn prefilter(@builtin(global_invocation_id) id: vec3<u32>) {
     c += textureSampleLevel(src, samp, uv + vec2<f32>(-o.x, o.y), 0.0).rgb;
     c += textureSampleLevel(src, samp, uv + vec2<f32>(o.x, o.y), 0.0).rgb;
     c *= 0.25;
+    // Un NaN o infinito en la escena se extendería con el desenfoque en un cuadrado negro: fuera.
+    // (Por bits: WGSL deja suponer que no hay NaN, así que `c != c` podría desaparecer.)
+    let exponent = bitcast<vec3<u32>>(c) & vec3<u32>(0x7f800000u);
+    c = select(c, vec3<f32>(0.0), exponent == vec3<u32>(0x7f800000u));
     // Umbral con rodilla suave (sin cortes bruscos entre lo que brilla y lo que no).
     let bright = max(c.r, max(c.g, c.b));
     var soft = clamp(bright - THRESHOLD + KNEE, 0.0, 2.0 * KNEE);
