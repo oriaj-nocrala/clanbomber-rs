@@ -112,6 +112,8 @@ enum (`CurrentSurfaceTexture`), `VertexState.buffers` es `&[Option<_>]`, `bind_g
   ejecutable, `../share/...`, o el repo).
 - Antes de subir: `cargo fmt --all`, `cargo clippy --workspace --all-targets -- -D warnings` y `cargo test`.
 - El README principal está en inglés; el español va en un `<details>` al final del mismo archivo.
+- Las imágenes del README llevan `?v=X.Y.Z`: al regenerar `docs/img` hay que subirlo, o GitHub (camo) y los
+  navegadores siguen mostrando las versiones viejas con el mismo nombre.
 
 ## Convenciones
 

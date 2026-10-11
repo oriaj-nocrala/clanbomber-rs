@@ -20,7 +20,7 @@ Up to 8 players, AI opponents, gamepads, 33 maps, power-ups, diseases, ice, trap
 [![Stars](https://img.shields.io/github/stars/oriaj-nocrala/clanbomber-rs?style=flat-square&logo=github&logoColor=white)](https://github.com/oriaj-nocrala/clanbomber-rs/stargazers)
 [![PRs welcome](https://img.shields.io/badge/PRs-welcome-FF5A5F?style=flat-square)](https://github.com/oriaj-nocrala/clanbomber-rs/pulls)
 
-<img src="docs/img/gameplay.gif" alt="Four AIs playing a round on FireWheels" width="640">
+<img src="docs/img/gameplay.gif?v=0.2.0" alt="Four AIs playing a round on FireWheels" width="640">
 
 <sub>Four AIs on <i>FireWheels</i>, with arrows pushing bombs around. Recorded by the game itself (<code>--screenshots</code>).</sub>
 
@@ -42,32 +42,32 @@ Linux.
 
 <table>
 <tr>
-<td width="50%"><img src="docs/img/menu.png" alt="Main menu"></td>
-<td width="50%"><img src="docs/img/gameplay-ice.png" alt="Ice-themed match"></td>
+<td width="50%"><img src="docs/img/menu.png?v=0.2.0" alt="Main menu"></td>
+<td width="50%"><img src="docs/img/gameplay-ice.png?v=0.2.0" alt="Ice-themed match"></td>
 </tr>
 <tr>
 <td align="center"><sub>Main menu, on the original title screen</sub></td>
 <td align="center"><sub>Ice arena: AIs, bombs, power-ups and cross-shaped fire</sub></td>
 </tr>
 <tr>
-<td width="50%"><img src="docs/img/gameplay-jungle.png" alt="Jungle-themed match"></td>
-<td width="50%"><img src="docs/img/team-scoreboard.png" alt="Team scoreboard"></td>
+<td width="50%"><img src="docs/img/gameplay-jungle.png?v=0.2.0" alt="Jungle-themed match"></td>
+<td width="50%"><img src="docs/img/team-scoreboard.png?v=0.2.0" alt="Team scoreboard"></td>
 </tr>
 <tr>
 <td align="center"><sub>6 graphic themes — this one is “Jungle Arena”</sub></td>
 <td align="center"><sub>Team scoreboard between rounds</sub></td>
 </tr>
 <tr>
-<td width="50%"><img src="docs/img/player-setup.png" alt="Player setup"></td>
-<td width="50%"><img src="docs/img/map-select.png" alt="Map selection"></td>
+<td width="50%"><img src="docs/img/player-setup.png?v=0.2.0" alt="Player setup"></td>
+<td width="50%"><img src="docs/img/map-select.png?v=0.2.0" alt="Map selection"></td>
 </tr>
 <tr>
 <td align="center"><sub>8 seats: skin, name, team and controller</sub></td>
 <td align="center"><sub>Map selection with live preview</sub></td>
 </tr>
 <tr>
-<td width="50%"><img src="docs/img/map-editor.png" alt="Map editor"></td>
-<td width="50%"><img src="docs/img/scoreboard.png" alt="Scoreboard with trophies"></td>
+<td width="50%"><img src="docs/img/map-editor.png?v=0.2.0" alt="Map editor"></td>
+<td width="50%"><img src="docs/img/scoreboard.png?v=0.2.0" alt="Scoreboard with trophies"></td>
 </tr>
 <tr>
 <td align="center"><sub>Built-in map editor</sub></td>
@@ -78,7 +78,7 @@ Linux.
 ## 🌋 1999 game, 2026 graphics
 
 <div align="center">
-<img src="docs/img/slow-motion.gif" alt="Slow motion on the death that decides the round" width="480">
+<img src="docs/img/slow-motion.gif?v=0.2.0" alt="Slow motion on the death that decides the round" width="480">
 
 <sub>The death that decides the round, in slow motion: the camera frames the victim, the bomb and the killer.</sub>
 </div>
