@@ -23,6 +23,10 @@ const REVEAL: u32 = 6u;
 // Cronómetro dibujado entero aquí (sin textura): `uv` va de 0 a 1 sobre el quad y `color` lleva
 // la vuelta de la aguja de segundos (r), la de la subesfera (g), la alarma (b) y el alfa (a).
 const WATCH: u32 = 7u;
+// Texto en campo de distancias (`text.rs`): el alfa de la textura es la distancia al borde de la
+// letra (0.5 en el borde). Bits 16-23 del modo: cuánto engordar la letra (contorno y sombra);
+// bits 24-31: cuánto difuminar el borde (sombra suave). Ambos en 0..0.5 unidades de distancia.
+const TEXT: u32 = 8u;
 
 struct VsOut {
     @builtin(position) pos: vec4<f32>,
@@ -41,7 +45,9 @@ fn vs(
 ) -> VsOut {
     // Las posiciones pueden ir entre píxeles virtuales (interpolación entre ticks): se ajustan
     // a la rejilla de píxeles físicos para que el pixel art no tiemble ni pierda filas.
-    let snapped = round(p * g.scale) / g.scale;
+    // El texto no: su borde ya se recorta por píxel físico y ajustar cada esquina deformaría
+    // las letras pequeñas.
+    let snapped = select(round(p * g.scale) / g.scale, p, (mode & 0xffffu) == TEXT);
     // Coordenadas virtuales en píxeles (origen arriba-izquierda) -> clip space.
     let ndc = vec2<f32>(snapped.x / g.screen.x * 2.0 - 1.0, 1.0 - snapped.y / g.screen.y * 2.0);
     return VsOut(vec4<f32>(ndc, 0.0, 1.0), uv, color, p, mode);
@@ -212,6 +218,8 @@ fn fs(in: VsOut) -> @location(0) vec4<f32> {
     // Tamaño de un píxel en las unidades del cronómetro (las derivadas, fuera del `switch`).
     let duv = fwidth(in.uv);
     let watch_aa = max(duv.x * 2.0, duv.y * 2.4) * 1.2;
+    // Lo que cambia la distancia del texto de un píxel físico al siguiente.
+    let text_aa = length(vec2<f32>(dpdx(texel.a), dpdy(texel.a)));
     switch in.mode & 0xffffu {
         case SILHOUETTE: {
             return vec4<f32>(in.color.rgb, texel.a * in.color.a);
@@ -257,6 +265,14 @@ fn fs(in: VsOut) -> @location(0) vec4<f32> {
         }
         case WATCH: {
             return stopwatch(in.uv, watch_aa, in.color);
+        }
+        case TEXT: {
+            let dilate = f32((in.mode >> 16u) & 0xffu) / 510.0;
+            let soft = f32(in.mode >> 24u) / 510.0;
+            let edge = 0.5 - dilate;
+            // Rampa de un píxel físico centrada en el borde (más ancha si se difumina).
+            let a = clamp((texel.a - edge) / (max(text_aa, 1e-4) + soft) + 0.5, 0.0, 1.0);
+            return vec4<f32>(in.color.rgb, in.color.a * a);
         }
         case HUE: {
             let c = rotate_hue(texel.rgb, g.time * 4.0);
