@@ -80,6 +80,7 @@ const MODE_HUE: u32 = 3;
 const MODE_REFLECT: u32 = 4;
 const MODE_BURN: u32 = 5;
 const MODE_REVEAL: u32 = 6;
+const MODE_WATCH: u32 = 7;
 
 pub struct Renderer {
     surface: wgpu::Surface<'static>,
@@ -455,6 +456,41 @@ impl Renderer {
     ) {
         let mode = MODE_REVEAL | progress_bits(progress);
         self.push_quad(tex, dst, src, [center[0], center[1], radius, alpha], mode);
+    }
+
+    /// Cronómetro antiguo dibujado por el shader en `rect` (proporción 1 : 1.2, la corona arriba),
+    /// girado `angle` radianes sobre su centro. `seconds` y `minutes` son las vueltas (0..1) de
+    /// la aguja roja y de la subesfera; `alarm` (0..1) tiñe la esfera de rojo.
+    pub fn stopwatch(
+        &mut self,
+        rect: [f32; 4],
+        angle: f32,
+        seconds: f32,
+        minutes: f32,
+        alarm: f32,
+    ) {
+        let [x, y, w, h] = rect;
+        let (cx, cy) = (x + w / 2.0, y + h / 2.0);
+        let (s, c) = angle.sin_cos();
+        let color = [seconds, minutes, alarm.clamp(0.0, 1.0), 1.0];
+        let vert = |u: f32, v: f32| {
+            let (dx, dy) = ((u - 0.5) * w, (v - 0.5) * h);
+            Vertex {
+                pos: [cx + dx * c - dy * s, cy + dx * s + dy * c],
+                uv: [u, v],
+                color,
+                mode: MODE_WATCH,
+            }
+        };
+        self.push_vertices(
+            TextureId(0),
+            [
+                vert(0.0, 0.0),
+                vert(1.0, 0.0),
+                vert(0.0, 1.0),
+                vert(1.0, 1.0),
+            ],
+        );
     }
 
     /// Sprite con el tono girando en el tiempo; `amount` en [0, 1] mezcla con el original.
