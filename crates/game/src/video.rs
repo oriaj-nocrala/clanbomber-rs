@@ -13,6 +13,7 @@ pub struct Video {
     pub particles: bool,
     pub crt: bool,
     pub fire: bool,
+    /// Ondas expansivas y cámara lenta en la muerte que decide la ronda.
     pub shockwaves: bool,
     pub sprite_fx: bool,
     pub lighting: bool,

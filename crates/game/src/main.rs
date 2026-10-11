@@ -18,6 +18,7 @@ mod player_setup;
 mod screen;
 mod shards;
 mod shots;
+mod slowmo;
 mod sparks;
 mod video;
 
@@ -27,7 +28,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use cb_core::{Config, ControllerKind, Input, Map, MapList, Phase, Rng, World, TICK_HZ};
-use cb_render::Renderer;
+use cb_render::{Camera, Renderer};
 use winit::application::ApplicationHandler;
 use winit::dpi::LogicalSize;
 use winit::event::WindowEvent;
@@ -115,6 +116,11 @@ struct App {
     sparks: Sparks,
     /// Posiciones de antes del último tick, para dibujar a medio camino entre ticks.
     prev: Option<interp::Snapshot>,
+    /// Cámara lenta en la muerte que decide la ronda.
+    slowmo: slowmo::SlowMo,
+    /// Si la ronda acaba en plena cámara lenta, se sigue viendo su último instante hasta que
+    /// la cámara termine de alejarse (y entonces sale el marcador).
+    frozen: Option<World>,
     keys: HashSet<KeyCode>,
     /// Pulsaciones de bomba pendientes de consumir en el próximo tick (una por flanco y teclado).
     bomb_latch: [bool; 3],
@@ -248,6 +254,8 @@ impl App {
         self.ui = Ui::new();
         self.sparks = Sparks::new();
         self.prev = None;
+        self.slowmo.reset();
+        self.frozen = None;
         self.screen = Screen::Game;
         self.paused = false;
         self.audio.set_music(self.play_music);
@@ -425,7 +433,8 @@ impl App {
             KeyCode::KeyP | KeyCode::F3 => self.paused = !self.paused,
             // Del marcador a la siguiente ronda; tras la última, de vuelta al menú
             // (GameStatus::show espera la barra espaciadora).
-            KeyCode::Space if !repeat => {
+            // Con la imagen congelada (fin de la cámara lenta) aún no se ve el marcador.
+            KeyCode::Space if !repeat && self.frozen.is_none() => {
                 if let Some(w) = self.world.as_mut() {
                     if let Phase::Scores { end_of_game, .. } = w.phase {
                         if end_of_game {
@@ -496,9 +505,21 @@ impl ApplicationHandler for App {
                 match &mut self.screen {
                     Screen::Game => {
                         // Paso fijo: la simulación avanza en ticks de 1/TICK_HZ, independiente del framerate.
-                        self.acc += frame;
+                        // La cámara lenta solo reparte el tiempo real más despacio entre los ticks.
+                        if !self.paused {
+                            self.slowmo.advance(frame as f32);
+                        }
+                        let scale = if self.video.shockwaves {
+                            self.slowmo.time_scale()
+                        } else {
+                            1.0
+                        };
+                        self.acc += frame * scale;
                         let dt = 1.0 / TICK_HZ as f64;
-                        if self.paused || self.scripted {
+                        if !self.slowmo.active() {
+                            self.frozen = None;
+                        }
+                        if self.paused || self.scripted || self.frozen.is_some() {
                             self.acc = 0.0;
                             // Sin interpolar: se dibuja el estado tal cual.
                             self.prev = None;
@@ -509,14 +530,35 @@ impl ApplicationHandler for App {
                             let inputs = self.inputs();
                             if let Some(w) = self.world.as_mut() {
                                 self.prev = Some(interp::Snapshot::of(w));
+                                let was_dead: Vec<bool> =
+                                    w.bombers.iter().map(|b| b.dead).collect();
+                                let before = self.slowmo.active().then(|| w.clone());
                                 w.step(&inputs);
+                                self.slowmo.after_tick(w, &was_dead);
                                 for e in w.take_events() {
                                     self.audio.play(e.into());
+                                }
+                                if !matches!(w.phase, Phase::Playing) && before.is_some() {
+                                    // Fin de ronda en plena cámara lenta: se congela la imagen.
+                                    self.frozen = before;
+                                    self.prev = None;
+                                    self.acc = 0.0;
+                                    break;
                                 }
                             }
                             self.acc -= dt;
                         }
-                        if let Some(w) = &self.world {
+                        // Los adornos avanzan con el tiempo real escalado (continuo), no a saltos
+                        // de tick: en cámara lenta llega un tick cada varios fotogramas.
+                        let fx_dt = if self.paused || self.scripted {
+                            played
+                        } else {
+                            (frame * scale) as f32
+                        };
+                        if let Some(w) = self.world.as_ref().filter(|_| self.frozen.is_none()) {
+                            if !matches!(w.phase, Phase::Playing) {
+                                self.slowmo.reset();
+                            }
                             self.ui.update(w, frame as f32);
                             if let Some(a) = &self.assets {
                                 let skins: Vec<f32> = self
@@ -524,17 +566,22 @@ impl ApplicationHandler for App {
                                     .iter()
                                     .map(|p| a.skins[p.skin].offset_y)
                                     .collect();
-                                self.ui.update_trails(w, played, &skins);
+                                self.ui.update_trails(w, fx_dt, &skins);
                             }
                             if let (Some((_, r)), Some(a)) = (self.gfx.as_mut(), &self.assets) {
-                                self.sparks.update(r, a, w, &self.players, played);
-                                r.advance_particles(played);
-                                r.set_shake(if w.shake > 0 && !self.paused {
-                                    1.0
-                                } else {
-                                    0.0
-                                });
+                                self.sparks.update(r, a, w, &self.players, fx_dt);
+                                r.advance_particles(fx_dt);
                             }
+                        }
+                        if let Some((_, r)) = self.gfx.as_mut() {
+                            let shaking = self.world.as_ref().is_some_and(|w| w.shake > 0);
+                            let live = !self.paused && self.frozen.is_none();
+                            r.set_shake(if shaking && live { 1.0 } else { 0.0 });
+                            r.set_camera(if self.video.shockwaves {
+                                self.slowmo.camera()
+                            } else {
+                                Camera::default()
+                            });
                         }
                     }
                     Screen::Credits(c) => {
@@ -564,6 +611,7 @@ impl ApplicationHandler for App {
                 if !matches!(self.screen, Screen::Game) {
                     if let Some((_, r)) = self.gfx.as_mut() {
                         r.set_shake(0.0);
+                        r.set_camera(Camera::default());
                     }
                 }
 
@@ -574,11 +622,12 @@ impl ApplicationHandler for App {
                             r,
                             a,
                             // Entre dos ticks: lo que sobra en el acumulador dice cuánto.
-                            &match &self.prev {
-                                Some(p) => {
+                            &match (&self.frozen, &self.prev) {
+                                (Some(f), _) => f.clone(),
+                                (None, Some(p)) => {
                                     interp::view(world, p, (self.acc * TICK_HZ as f64) as f32)
                                 }
-                                None => world.clone(),
+                                (None, None) => world.clone(),
                             },
                             &self.ui,
                             &self.sparks.shards,
@@ -664,6 +713,8 @@ fn main() {
         ui: Ui::new(),
         sparks: Sparks::new(),
         prev: None,
+        slowmo: slowmo::SlowMo::new(),
+        frozen: None,
         keys: HashSet::new(),
         bomb_latch: [false; 3],
         gfx: None,

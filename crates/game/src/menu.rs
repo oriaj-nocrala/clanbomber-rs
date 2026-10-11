@@ -327,7 +327,7 @@ impl Menu {
         m.add(
             gr,
             Id::Shockwaves,
-            "Shockwaves",
+            "Cinematic Effects",
             value(Id::Shockwaves, 0, 1),
         );
         m.add(

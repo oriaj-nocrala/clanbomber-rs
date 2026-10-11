@@ -7,9 +7,14 @@ struct Post {
     aberration: f32,
     time: f32,
     waves: u32,
-    _pad0: u32,
-    _pad1: u32,
-    _pad2: u32,
+    // Cámara: zoom (1 = sin zoom) alrededor de `focus` (px virtuales).
+    zoom: f32,
+    focus: vec2<f32>,
+    // Cámara lenta: 0..1 de desaturación y viñeta.
+    drama: f32,
+    _pad0: f32,
+    _pad1: f32,
+    _pad2: f32,
     // Por onda: centro (px virtuales), progreso 0..1 y fuerza.
     wave: array<vec4<f32>, 16>,
 };
@@ -32,6 +37,10 @@ fn vs(@builtin(vertex_index) vi: u32) -> VsOut {
 }
 
 fn sample_scene(uv: vec2<f32>) -> vec3<f32> {
+    if post.zoom > 1.001 {
+        // Con zoom no entero, el bilineal evita píxeles de ancho desigual.
+        return textureSample(scene, linear, uv).rgb;
+    }
     if post.aberration <= 0.0 {
         return textureSample(scene, nearest, uv).rgb;
     }
@@ -68,8 +77,7 @@ fn shockwaves(uv: vec2<f32>) -> vec3<f32> {
 
 @fragment
 fn fs(in: VsOut) -> @location(0) vec4<f32> {
-    let wave = shockwaves(in.uv);
-    var uv = in.uv - wave.xy;
+    var uv = in.uv;
     if post.crt > 0.0 {
         // Curvatura de tubo: los bordes se doblan hacia fuera.
         let c = uv * 2.0 - 1.0;
@@ -77,8 +85,20 @@ fn fs(in: VsOut) -> @location(0) vec4<f32> {
     }
     // Fuera del tubo, negro (sin `return` temprano: textureSample exige control uniforme).
     let inside = f32(all(uv >= vec2<f32>(0.0)) && all(uv <= vec2<f32>(1.0)));
-    var color = sample_scene(uv) + textureSample(bloom_tex, linear, uv).rgb * post.bloom;
+    // Cámara: acercarse a `focus` deja ese punto quieto en pantalla.
+    let focus = post.focus / vec2<f32>(800.0, 600.0);
+    var suv = focus + (uv - focus) / post.zoom;
+    let wave = shockwaves(suv);
+    suv -= wave.xy;
+    var color = sample_scene(suv) + textureSample(bloom_tex, linear, suv).rgb * post.bloom;
     color *= 1.0 + wave.z;
+    if post.drama > 0.0 {
+        // Cámara lenta: menos color y bordes oscuros.
+        let lum = dot(color, vec3<f32>(0.2126, 0.7152, 0.0722));
+        color = mix(color, vec3<f32>(lum), 0.5 * post.drama);
+        let v = uv * (1.0 - uv);
+        color *= mix(1.0, pow(16.0 * v.x * v.y, 0.35), post.drama);
+    }
     if post.crt > 0.0 {
         // Líneas de barrido a la resolución del original (600 líneas) y viñeta.
         let line = 0.5 + 0.5 * cos(uv.y * 600.0 * 6.2831853);
