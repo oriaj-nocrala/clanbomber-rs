@@ -8,6 +8,7 @@ use cb_core::{
 use cb_render::{Align, Fire, Renderer, Sheet};
 
 use crate::assets::Assets;
+use crate::slowmo::Highlight;
 use crate::sparks::Sparks;
 
 /// `offset_x` de dibujo de todos los bombers (`Bomber::Bomber`); el `offset_y` depende del aspecto.
@@ -201,6 +202,7 @@ fn draw_falling(
     draw_scaled(r, sheet, cell, pos, offset_y, s, s);
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn draw(
     r: &mut Renderer,
     a: &Assets,
@@ -209,9 +211,15 @@ pub fn draw(
     fx: &Sparks,
     players: &[Player],
     paused: bool,
+    highlight: Option<Highlight>,
 ) {
     match w.phase {
-        Phase::Playing => draw_game(r, a, w, ui, fx, players),
+        Phase::Playing => {
+            draw_game(r, a, w, ui, fx, players);
+            if let Some(h) = highlight {
+                draw_kill_tag(r, a, w, players, h);
+            }
+        }
         Phase::Scores {
             winner,
             end_of_game,
@@ -695,6 +703,47 @@ fn draw_stopwatch(r: &mut Renderer, time_left: f32) {
         (left / 60.0) / 10.0,
         alarm,
     );
+}
+
+/// En la cámara lenta, el nombre de quien mató sobre su cabeza (en el color de su bomber), o
+/// "SUICIDE" sobre quien se mató solo.
+fn draw_kill_tag(r: &mut Renderer, a: &Assets, w: &World, players: &[Player], h: Highlight) {
+    let alpha = h.strength;
+    if alpha <= 0.01 {
+        return;
+    }
+    let (text, pos, color) = match h.killer {
+        Some(k) if k == h.victim => ("SUICIDE".to_string(), h.victim_pos, text_color()),
+        Some(k) => {
+            let Some(b) = w.bombers.get(k).filter(|b| !b.dead) else {
+                return;
+            };
+            let Some(p) = players.get(k) else {
+                return;
+            };
+            let c = skin_color(p.skin);
+            let pos = [60.0 + b.x + 20.0, 40.0 + b.y + 20.0];
+            (
+                p.name.clone(),
+                pos,
+                [c[0] * 1.6, c[1] * 1.6, c[2] * 1.6, 1.0],
+            )
+        }
+        None => return,
+    };
+    // Sube un poco al aparecer.
+    let y = pos[1] - 44.0 - 6.0 * (1.0 - alpha);
+    let shadow = [0.0, 0.0, 0.0, 0.7 * alpha];
+    r.text(
+        &a.font_small,
+        &text,
+        pos[0] + 1.0,
+        y + 1.0,
+        shadow,
+        Align::Center,
+    );
+    let c = [color[0], color[1], color[2], alpha];
+    r.text(&a.font_small, &text, pos[0], y, c, Align::Center);
 }
 
 /// El observador, el reloj y el aviso de "HURRY UP" (`Observer::show`).
