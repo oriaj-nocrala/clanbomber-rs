@@ -12,7 +12,7 @@ use wgpu::util::DeviceExt;
 use winit::window::Window;
 
 pub use fire::Fire;
-pub use fx::{Burst, Effects, ParticleKind};
+pub use fx::{Burst, Camera, Effects, ParticleKind};
 pub use light::{Light, Lighting};
 pub use text::{Align, Font, FontError};
 
@@ -107,6 +107,7 @@ pub struct Renderer {
     /// Tamaño virtual y reloj para los shaders (`Globals`).
     globals: wgpu::Buffer,
     waves: Vec<[f32; 4]>,
+    camera: Camera,
 }
 
 impl Renderer {
@@ -277,6 +278,7 @@ impl Renderer {
             started: std::time::Instant::now(),
             globals,
             waves: Vec::new(),
+            camera: Camera::default(),
         };
         // Textura 0: un píxel blanco, para los quads de color plano.
         r.load_rgba(&[255; 4], 1, 1);
@@ -377,6 +379,11 @@ impl Renderer {
     /// dibujan).
     pub fn particle_layer(&mut self) {
         self.particle_layer = Some(self.batches.len());
+    }
+
+    /// Zoom, punto de foco y "drama" de la composición final; se queda hasta que se cambie.
+    pub fn set_camera(&mut self, camera: Camera) {
+        self.camera = camera;
     }
 
     /// Temblor de pantalla en [0, 1]: separa los canales de color en la composición.
@@ -660,8 +667,14 @@ impl Renderer {
         if self.effects.bloom {
             self.post.bloom(&mut enc);
         }
-        self.post
-            .set_params(&self.queue, self.effects, self.shake, time, &self.waves);
+        self.post.set_params(
+            &self.queue,
+            self.effects,
+            self.shake,
+            time,
+            &self.waves,
+            self.camera,
+        );
         let (viewport, _) = letterbox(self.config.width, self.config.height);
         self.post.composite(&mut enc, &view, viewport);
         self.queue.submit([enc.finish()]);

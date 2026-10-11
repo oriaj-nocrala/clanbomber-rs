@@ -45,6 +45,27 @@ impl Default for Effects {
     }
 }
 
+/// Cámara de la composición final (cámara lenta).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Camera {
+    /// 1 = sin zoom.
+    pub zoom: f32,
+    /// Punto que queda quieto al hacer zoom (px virtuales).
+    pub focus: [f32; 2],
+    /// 0..1: desaturación y viñeta.
+    pub drama: f32,
+}
+
+impl Default for Camera {
+    fn default() -> Self {
+        Camera {
+            zoom: 1.0,
+            focus: [400.0, 300.0],
+            drama: 0.0,
+        }
+    }
+}
+
 /// Aspecto y comportamiento de una partícula (ver `particles.wgsl`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ParticleKind {
@@ -333,7 +354,10 @@ struct PostParams {
     aberration: f32,
     time: f32,
     waves: u32,
-    _pad: [u32; 3],
+    zoom: f32,
+    focus: [f32; 2],
+    drama: f32,
+    _pad: [f32; 3],
     /// Por onda: centro (px virtuales), progreso 0..1 y fuerza.
     wave: [[f32; 4]; MAX_WAVES],
 }
@@ -624,6 +648,7 @@ impl Post {
         shake: f32,
         time: f32,
         waves: &[[f32; 4]],
+        camera: Camera,
     ) {
         let mut wave = [[0.0; 4]; MAX_WAVES];
         let n = waves.len().min(MAX_WAVES);
@@ -643,7 +668,10 @@ impl Post {
                 aberration: shake * 2.0 / 800.0,
                 time,
                 waves: n as u32,
-                _pad: [0; 3],
+                zoom: camera.zoom.max(1.0),
+                focus: camera.focus,
+                drama: camera.drama.clamp(0.0, 1.0),
+                _pad: [0.0; 3],
                 wave,
             }),
         );

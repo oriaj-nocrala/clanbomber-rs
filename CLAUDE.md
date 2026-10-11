@@ -29,7 +29,8 @@ cargo fmt
   `text`, vía `fontdue`), shader en `quad.wgsl`. La escena se dibuja en una textura `Rgba16Float`
   intermedia (al tamaño del letterbox) y `fx.rs` la compone en la ventana: partículas simuladas por compute
   (`particles.wgsl`, anillo de 16384; la CPU solo manda `Burst`s), bloom por compute (`bloom.wgsl`, a 400x300)
-  y composición con CRT opcional, aberración al temblar y ondas expansivas (`post.wgsl`).
+  y composición con CRT opcional, aberración al temblar, ondas expansivas y cámara (`Camera`: zoom, foco y desaturación
+  dramática; `post.wgsl`).
   `quad.wgsl` tiene modos por vértice: normal, silueta (estelas), brillo de hielo, tono girando (enfermedad) y
   reflejo (`sprite_reflection`: invertido y recortado a las casillas de hielo).
   `light.rs`/`light.wgsl`: iluminación dinámica multiplicativa con sombras (raymarch sobre la rejilla de
@@ -39,9 +40,12 @@ cargo fmt
 - `crates/game` (`cb-game`): binario winit. Loop con acumulador de tiempo → `World::step` a 60 Hz → dibujo
   interpolado entre el último tick y el anterior (`interp.rs`: copia del mundo con posiciones a medio camino;
   `quad.wgsl` ajusta los vértices a píxeles físicos), para monitores de más de 60 Hz.
+  `slowmo.rs`: cámara lenta en la muerte que decide la ronda; solo escala el tiempo que recibe el
+  acumulador (los ticks son los mismos, determinista) y acerca la cámara. Si la ronda acaba en plena
+  cámara lenta se congela el último fotograma hasta que termina. Va con la opción "Cinematic Effects".
   `assets.rs` carga texturas y fuentes; `draw.rs` dibuja mapa, HUD y marcador; `sparks.rs` compara el
   mundo con el fotograma anterior y lanza ráfagas de partículas (explosiones, cajas, muertes, mechas);
-  `video.rs` son las opciones gráficas (bloom, partículas, CRT, explosiones por shader, ondas, efectos
+  `video.rs` son las opciones gráficas (bloom, partículas, CRT, explosiones por shader, ondas y cámara lenta, efectos
   de sprites); `Ui` guarda las estelas de los bombers rápidos (crecen con `speed_level`); `lighting.rs` decide las
   luces (fuego, bombas que laten, halos de bombers, extras); `shards.rs` simula en CPU los trozos con textura (cajas y
   extras quemados, con altura falsa y rebote) y el "pop" de los extras recogidos, en `video.txt` aparte de `Config` para no
