@@ -11,6 +11,8 @@ const SILHOUETTE: u32 = 1u;
 const ICE: u32 = 2u;
 // Tono que gira con el tiempo (bomber "stoned").
 const HUE: u32 = 3u;
+// Reflejo en el hielo: el sprite (ya invertido por los UV) con rielado por líneas.
+const REFLECT: u32 = 4u;
 
 struct VsOut {
     @builtin(position) pos: vec4<f32>,
@@ -66,6 +68,12 @@ fn fs(in: VsOut) -> @location(0) vec4<f32> {
             let sparkle = select(0.0, 1.0, tw > 0.996);
             let a = (shine * 0.35 + sparkle * 0.8) * in.color.a;
             return vec4<f32>(vec3<f32>(1.3, 1.45, 1.6), a);
+        }
+        case REFLECT: {
+            // Líneas que rielan despacio, como una superficie que no está del todo quieta.
+            let row = floor(in.world.y);
+            let shimmer = 0.75 + 0.25 * sin(row * 0.9 - g.time * 5.0);
+            return vec4<f32>(texel.rgb * in.color.rgb, texel.a * in.color.a * shimmer);
         }
         case HUE: {
             let c = rotate_hue(texel.rgb, g.time * 4.0);
