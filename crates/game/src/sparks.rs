@@ -2,8 +2,11 @@
 //! mundo con el del fotograma anterior (explosiones nuevas, cajas rotas, bombers muertos...) y se
 //! piden ráfagas al renderizador, que las simula en la GPU. Puro adorno: no toca la simulación.
 
-use cb_core::{Phase, World, TILE_PIXELS};
+use cb_core::{ExtraKind, Phase, World, TILE_PIXELS};
 use cb_render::{Burst, ParticleKind, Renderer};
+
+use crate::assets::Assets;
+use crate::shards::{Shards, Source};
 
 use crate::draw::{skin_color, speed_level, srgb_rgba, Player};
 
@@ -31,6 +34,10 @@ pub struct Sparks {
     crumbling: Vec<(usize, usize)>,
     vanishing: Vec<(usize, usize)>,
     dead: Vec<bool>,
+    /// Extras en el suelo del fotograma anterior: tipo, posición y si estaba ardiendo.
+    extras: Vec<(ExtraKind, i32, i32, bool)>,
+    /// Trozos con textura y extras recogidos (se dibujan en `draw`).
+    pub shards: Shards,
 }
 
 fn tile_center(tx: i32, ty: i32) -> [f32; 2] {
@@ -48,11 +55,19 @@ impl Sparks {
 
     /// Lanza las ráfagas de lo que cambió desde la última llamada. `dt` son los segundos de
     /// juego transcurridos (0 en pausa: no sale nada nuevo).
-    pub fn update(&mut self, r: &mut Renderer, w: &World, players: &[Player], dt: f32) {
+    pub fn update(&mut self, r: &mut Renderer, a: &Assets, w: &World, players: &[Player], dt: f32) {
+        self.shards.update(dt);
         if !matches!(w.phase, Phase::Playing) {
             self.tracking = false;
+            self.shards.clear();
             return;
         }
+        let textured = r.effects().sprite_fx;
+        let extras: Vec<_> = w
+            .extras()
+            .filter(|e| !e.falling && !e.flight.active)
+            .map(|e| (e.kind, e.x as i32, e.y as i32, e.destroyed))
+            .collect();
         let explosions: Vec<_> = w.explosions().map(|e| (e.tx, e.ty, e.owner)).collect();
         let crumbling: Vec<_> = w.map.crumbling.iter().map(|c| (c.x, c.y)).collect();
         let vanishing: Vec<_> = w.map.vanishing.iter().map(|v| (v.x, v.y)).collect();
@@ -67,9 +82,22 @@ impl Sparks {
             let theme = w.config.theme.clamp(0, 5) as usize;
             for &(x, y) in &self.crumbling {
                 if !crumbling.contains(&(x, y)) {
-                    box_debris(r, x as i32, y as i32, BOX_COLORS[theme]);
+                    if textured {
+                        // La caja (ya agrietada: celda tema*4+3) salta en trozos de sí misma.
+                        let origin = [
+                            ORIGIN.0 + x as f32 * TILE_PIXELS as f32,
+                            ORIGIN.1 + y as f32 * TILE_PIXELS as f32,
+                        ];
+                        let cell = theme as u32 * 4 + 3;
+                        self.shards
+                            .shatter(Source::MapTile, &a.maptiles, cell, origin, 4);
+                        dust(r, x as i32, y as i32);
+                    } else {
+                        box_debris(r, x as i32, y as i32, BOX_COLORS[theme]);
+                    }
                 }
             }
+            self.extra_fx(r, a, w, &extras, textured);
             for &(x, y) in &vanishing {
                 if !self.vanishing.contains(&(x, y)) {
                     dust(r, x as i32, y as i32);
@@ -93,6 +121,64 @@ impl Sparks {
         self.crumbling = crumbling;
         self.vanishing = vanishing;
         self.dead = dead;
+        self.extras = extras;
+    }
+
+    /// Extras que se queman (se parten) o que alguien recoge (saltan brillando).
+    fn extra_fx(
+        &mut self,
+        r: &mut Renderer,
+        a: &Assets,
+        w: &World,
+        now: &[(ExtraKind, i32, i32, bool)],
+        textured: bool,
+    ) {
+        if !textured {
+            return;
+        }
+        for &(kind, x, y, burning) in now {
+            let was = self.extras.iter().find(|e| (e.0, e.1, e.2) == (kind, x, y));
+            if burning && was.is_some_and(|e| !e.3) {
+                let origin = [ORIGIN.0 + x as f32, ORIGIN.1 + y as f32];
+                self.shards
+                    .shatter(Source::Extra, &a.extras, kind as u32, origin, 4);
+                r.emit(&Burst {
+                    area: [12.0, 12.0],
+                    color: [0.08, 0.07, 0.07, 0.6],
+                    speed: [10.0, 40.0],
+                    life: [0.6, 1.1],
+                    size: 6.0,
+                    ..Burst::new(ParticleKind::Smoke, [origin[0] + 20.0, origin[1] + 20.0], 5)
+                });
+            }
+        }
+        for &(kind, x, y, burning) in &self.extras {
+            if burning || now.iter().any(|e| (e.0, e.1, e.2) == (kind, x, y)) {
+                continue;
+            }
+            // Si sigue existiendo (vuela o cae) no lo ha recogido nadie.
+            if w.extras()
+                .any(|e| e.kind == kind && (e.falling || e.flight.active))
+            {
+                continue;
+            }
+            let good = kind.disease().is_none();
+            let pos = [ORIGIN.0 + x as f32, ORIGIN.1 + y as f32];
+            self.shards.pop(kind as u32, pos, good);
+            let color = if good {
+                [2.6, 2.0, 0.7, 1.0]
+            } else {
+                [0.8, 2.4, 0.6, 1.0]
+            };
+            r.emit(&Burst {
+                area: [4.0, 4.0],
+                color,
+                speed: [70.0, 110.0],
+                life: [0.25, 0.45],
+                size: 1.6,
+                ..Burst::new(ParticleKind::Glow, [pos[0] + 20.0, pos[1] + 20.0], 18)
+            });
+        }
     }
 }
 

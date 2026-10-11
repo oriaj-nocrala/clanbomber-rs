@@ -8,6 +8,7 @@ use cb_core::{
 use cb_render::{Align, Fire, Renderer, Sheet};
 
 use crate::assets::Assets;
+use crate::shards::Shards;
 
 /// `offset_x` de dibujo de todos los bombers (`Bomber::Bomber`); el `offset_y` depende del aspecto.
 const BOMBER_OFFSET_X: f32 = 60.0;
@@ -201,9 +202,17 @@ fn draw_falling(
     draw_scaled(r, sheet, cell, pos, offset_y, s, s);
 }
 
-pub fn draw(r: &mut Renderer, a: &Assets, w: &World, ui: &Ui, players: &[Player], paused: bool) {
+pub fn draw(
+    r: &mut Renderer,
+    a: &Assets,
+    w: &World,
+    ui: &Ui,
+    shards: &Shards,
+    players: &[Player],
+    paused: bool,
+) {
     match w.phase {
-        Phase::Playing => draw_game(r, a, w, ui, players),
+        Phase::Playing => draw_game(r, a, w, ui, shards, players),
         Phase::Scores {
             winner,
             end_of_game,
@@ -249,7 +258,14 @@ fn tile_cells(map: &Map, x: i32, y: i32) -> Option<(u32, Option<u32>)> {
     })
 }
 
-fn draw_game(r: &mut Renderer, a: &Assets, w: &World, ui: &Ui, players: &[Player]) {
+fn draw_game(
+    r: &mut Renderer,
+    a: &Assets,
+    w: &World,
+    ui: &Ui,
+    shards: &Shards,
+    players: &[Player],
+) {
     let sprite_fx = r.effects().sprite_fx;
     // Tema visual (0..6): cada tema ocupa 4 celdas en maptiles.png.
     let theme = w.config.theme.clamp(0, 5) as u32;
@@ -382,7 +398,11 @@ fn draw_game(r: &mut Renderer, a: &Assets, w: &World, ui: &Ui, players: &[Player
             }
         }
     }
-    for e in w.extras().filter(|e| !e.falling && !e.flight.active) {
+    // Un extra que arde ya se partió en trozos (con los efectos de sprites): no se dibuja.
+    for e in w
+        .extras()
+        .filter(|e| !(e.falling || e.flight.active || sprite_fx && e.destroyed))
+    {
         r.sheet_sprite(&a.extras, e.kind as u32, ox + e.x, oy + e.y);
     }
     let fire_shader = r.effects().fire;
@@ -575,10 +595,13 @@ fn draw_game(r: &mut Renderer, a: &Assets, w: &World, ui: &Ui, players: &[Player
         }
     }
 
+    // Trozos de cajas y extras, en el aire sobre todo lo demás.
+    shards.draw_shards(r, a);
     // Luz dinámica sobre todo lo anterior; las partículas, que ya brillan, van encima.
     crate::lighting::apply(r, w, players);
     // Partículas (chispas, cascotes, humo) sobre el mapa y bajo el reloj del observador.
     r.particle_layer();
+    shards.draw_pops(r, a);
     draw_observer(r, a, w);
 }
 
@@ -608,7 +631,10 @@ fn draw_reflections(r: &mut Renderer, a: &Assets, w: &World, players: &[Player],
             r.sprite_reflection(sheet.tex, sheet.cell(cell), dst, *clip, alpha);
         }
     };
-    for e in w.extras().filter(|e| !e.falling && !e.flight.active) {
+    for e in w
+        .extras()
+        .filter(|e| !e.falling && !e.flight.active && !e.destroyed)
+    {
         let dst = [o.0 + e.x, o.1 + e.y, 40.0, 40.0];
         reflect(r, &a.extras, e.kind as u32, dst, 0.6);
     }

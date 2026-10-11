@@ -41,7 +41,8 @@ cargo fmt
   mundo con el fotograma anterior y lanza ráfagas de partículas (explosiones, cajas, muertes, mechas);
   `video.rs` son las opciones gráficas (bloom, partículas, CRT, explosiones por shader, ondas, efectos
   de sprites); `Ui` guarda las estelas de los bombers rápidos (crecen con `speed_level`); `lighting.rs` decide las
-  luces (fuego, bombas que laten, halos de bombers, extras), en `video.txt` aparte de `Config` para no
+  luces (fuego, bombas que laten, halos de bombers, extras); `shards.rs` simula en CPU los trozos con textura (cajas y
+  extras quemados, con altura falsa y rebote) y el "pop" de los extras recogidos, en `video.txt` aparte de `Config` para no
   entrar en `World::state_hash`; `audio.rs` (efectos y música; el núcleo solo emite `GameEvent`); `menu.rs` es el menú en árbol
   (opciones de `Config`, guardadas al cambiar); `intro.rs`, `player_setup.rs`, `map_select.rs`, `map_editor.rs`, `credits.rs` y `help.rs`
   son las demás pantallas de menú (`screen.rs`: `Flow` y `TextEdit`). Pantallas: menú ⇄ partida (Esc vuelve al menú; Espacio pasa
