@@ -8,6 +8,7 @@ use cb_render::{Burst, ParticleKind, Renderer};
 use crate::assets::Assets;
 use crate::haze::Haze;
 use crate::shards::{Shards, Source};
+use crate::weather::Weather;
 
 use crate::draw::{skin_color, speed_level, srgb_rgba, Player};
 
@@ -41,6 +42,8 @@ pub struct Sparks {
     pub shards: Shards,
     /// Aire caliente sobre el fuego y las mechas.
     pub haze: Haze,
+    /// Clima del tema (nieve, hojas...).
+    pub weather: Weather,
 }
 
 fn tile_center(tx: i32, ty: i32) -> [f32; 2] {
@@ -61,6 +64,9 @@ impl Sparks {
     pub fn update(&mut self, r: &mut Renderer, a: &Assets, w: &World, players: &[Player], dt: f32) {
         self.shards.update(dt);
         self.haze.update(w, dt);
+        if r.effects().particles {
+            self.weather.update(w.config.theme, dt);
+        }
         if !matches!(w.phase, Phase::Playing) {
             self.tracking = false;
             self.shards.clear();
