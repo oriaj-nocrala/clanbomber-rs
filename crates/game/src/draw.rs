@@ -316,6 +316,10 @@ fn draw_game(r: &mut Renderer, a: &Assets, w: &World, ui: &Ui, players: &[Player
         }
     }
 
+    if sprite_fx {
+        draw_reflections(r, a, w, players, (ox, oy));
+    }
+
     // Orden de z del original: explosiones (2000) < bombas (3000+y) < bombers (4000+y).
     let at = |tx: i32, ty: i32| (ox + (tx * 40) as f32, oy + (ty * 40) as f32);
     // Lo que cae (Z_FALLING = -1) queda por debajo de todo; luego extras (1000).
@@ -576,6 +580,55 @@ fn draw_game(r: &mut Renderer, a: &Assets, w: &World, ui: &Ui, players: &[Player
     // Partículas (chispas, cascotes, humo) sobre el mapa y bajo el reloj del observador.
     r.particle_layer();
     draw_observer(r, a, w);
+}
+
+/// Reflejos en el hielo: bombers, bombas y extras se ven invertidos bajo sus pies, solo donde
+/// hay hielo. Se dibujan sobre el suelo y bajo todo lo demás.
+fn draw_reflections(r: &mut Renderer, a: &Assets, w: &World, players: &[Player], o: (f32, f32)) {
+    let t = TILE_PIXELS as f32;
+    let ice: Vec<[f32; 4]> = (0..MAP_HEIGHT as i32)
+        .flat_map(|y| (0..MAP_WIDTH as i32).map(move |x| (x, y)))
+        .filter(|&(x, y)| w.map.get(x, y) == Tile::Ice && !w.map.is_vanishing(x, y))
+        .map(|(x, y)| [o.0 + x as f32 * t, o.1 + y as f32 * t, t, t])
+        .collect();
+    if ice.is_empty() {
+        return;
+    }
+    let reflect = |r: &mut Renderer, sheet: &Sheet, cell: u32, dst: [f32; 4], alpha: f32| {
+        let (x0, x1, y0, y1) = (
+            dst[0],
+            dst[0] + dst[2],
+            dst[1] + dst[3],
+            dst[1] + 2.0 * dst[3],
+        );
+        for clip in ice
+            .iter()
+            .filter(|c| c[0] < x1 && c[0] + c[2] > x0 && c[1] < y1 && c[1] + c[3] > y0)
+        {
+            r.sprite_reflection(sheet.tex, sheet.cell(cell), dst, *clip, alpha);
+        }
+    };
+    for e in w.extras().filter(|e| !e.falling && !e.flight.active) {
+        let dst = [o.0 + e.x, o.1 + e.y, 40.0, 40.0];
+        reflect(r, &a.extras, e.kind as u32, dst, 0.6);
+    }
+    for b in w.bombs().filter(|b| !b.falling && !b.flight.active) {
+        let cell = players[b.owner].skin as u32 * 4 + b.frame();
+        reflect(r, &a.bombs, cell, [o.0 + b.x, o.1 + b.y, 40.0, 40.0], 0.75);
+    }
+    for (b, p) in w.bombers.iter().zip(players) {
+        if b.dead || b.is_falling() || b.flight.active {
+            continue;
+        }
+        let skin = &a.skins[p.skin];
+        let dst = [
+            b.get_x() as f32 + BOMBER_OFFSET_X,
+            b.get_y() as f32 + skin.offset_y,
+            skin.sheet.cell_w,
+            skin.sheet.cell_h,
+        ];
+        reflect(r, &skin.sheet, b.sprite_nr(), dst, 0.8);
+    }
 }
 
 /// El observador, el reloj y el aviso de "HURRY UP" (`Observer::show`).

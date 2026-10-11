@@ -76,6 +76,7 @@ const MODE_NORMAL: u32 = 0;
 const MODE_SILHOUETTE: u32 = 1;
 const MODE_ICE: u32 = 2;
 const MODE_HUE: u32 = 3;
+const MODE_REFLECT: u32 = 4;
 
 pub struct Renderer {
     surface: wgpu::Surface<'static>,
@@ -414,6 +415,51 @@ impl Renderer {
         self.push_quad(tex, dst, src, [1.0, 1.0, 1.0, amount], MODE_HUE);
     }
 
+    /// Reflejo de un sprite dibujado en `dst`: invertido bajo su borde inferior, recortado a
+    /// `clip` y desvaneciéndose hacia abajo (`alpha` es la opacidad junto al borde).
+    pub fn sprite_reflection(
+        &mut self,
+        tex: TextureId,
+        src: [f32; 4],
+        dst: [f32; 4],
+        clip: [f32; 4],
+        alpha: f32,
+    ) {
+        let [x, y, w, h] = dst;
+        // El reflejo ocupa [x, y + h] .. [x + w, y + 2h]; se recorta a `clip`.
+        let top = y + h;
+        let x0 = x.max(clip[0]);
+        let x1 = (x + w).min(clip[0] + clip[2]);
+        let y0 = top.max(clip[1]);
+        let y1 = (top + h).min(clip[1] + clip[3]);
+        if x0 >= x1 || y0 >= y1 || w <= 0.0 || h <= 0.0 {
+            return;
+        }
+        let (fx0, fx1) = ((x0 - x) / w, (x1 - x) / w);
+        let (fy0, fy1) = ((y0 - top) / h, (y1 - top) / h);
+        let (tw, th) = self.textures[tex.0].size;
+        let u = |f: f32| (src[0] + src[2] * f) / tw;
+        // Invertido: la fila f del reflejo es la fila (1 - f) del sprite.
+        let v = |f: f32| (src[1] + src[3] * (1.0 - f)) / th;
+        let tint = [0.8, 0.9, 1.0];
+        let color = |f: f32| [tint[0], tint[1], tint[2], alpha * (1.0 - f).powf(1.3)];
+        let vert = |px, py, fx, fy| Vertex {
+            pos: [px, py],
+            uv: [u(fx), v(fy)],
+            color: color(fy),
+            mode: MODE_REFLECT,
+        };
+        self.push_vertices(
+            tex,
+            [
+                vert(x0, y0, fx0, fy0),
+                vert(x1, y0, fx1, fy0),
+                vert(x0, y1, fx0, fy1),
+                vert(x1, y1, fx1, fy1),
+            ],
+        );
+    }
+
     /// Destello de hielo animado sobre el rectángulo `dst` (se dibuja encima de la casilla).
     pub fn ice_shine(&mut self, dst: [f32; 4], alpha: f32) {
         self.push_quad(
@@ -479,10 +525,6 @@ impl Renderer {
         color: [f32; 4],
         mode: u32,
     ) {
-        let quad_index = (self.verts.len() / 4) as u32;
-        if quad_index as usize >= MAX_QUADS {
-            return;
-        }
         // Sin región de origen (quad de color): UV al centro del píxel blanco.
         let (u0, v0, u1, v1) = if src[2] == 0.0 {
             (0.5, 0.5, 0.5, 0.5)
@@ -502,12 +544,24 @@ impl Renderer {
             color,
             mode,
         };
-        self.verts.extend([
-            v(x, y, u0, v0),
-            v(x + w, y, u1, v0),
-            v(x, y + h, u0, v1),
-            v(x + w, y + h, u1, v1),
-        ]);
+        self.push_vertices(
+            tex,
+            [
+                v(x, y, u0, v0),
+                v(x + w, y, u1, v0),
+                v(x, y + h, u0, v1),
+                v(x + w, y + h, u1, v1),
+            ],
+        );
+    }
+
+    /// Añade un quad (arriba-izquierda, arriba-derecha, abajo-izquierda, abajo-derecha).
+    fn push_vertices(&mut self, tex: TextureId, quad: [Vertex; 4]) {
+        let quad_index = (self.verts.len() / 4) as u32;
+        if quad_index as usize >= MAX_QUADS {
+            return;
+        }
+        self.verts.extend(quad);
         match self.batches.last_mut() {
             Some(Batch::Quads { tex: t, quads, .. }) if *t == tex => *quads += 1,
             _ => self.batches.push(Batch::Quads {
