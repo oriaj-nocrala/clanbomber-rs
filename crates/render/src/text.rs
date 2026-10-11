@@ -203,6 +203,15 @@ fn sdf(coverage: &[f32], w: usize, h: usize) -> Vec<u8> {
         .collect()
 }
 
+/// Cuánto encoger un texto de `width` px para que quepa en `max_width` (nunca agranda).
+fn fit_scale(width: f32, max_width: f32) -> f32 {
+    if width > max_width && width > 0.0 {
+        (max_width / width).max(0.0)
+    } else {
+        1.0
+    }
+}
+
 /// Lleva un ancho en "unidades de distancia" (0..0.5) a los 8 bits que espera el shader.
 fn distance_bits(units: f32) -> u32 {
     ((units / 0.5).clamp(0.0, 1.0) * 255.0).round() as u32
@@ -303,23 +312,61 @@ impl Renderer {
         align: Align,
         style: TextStyle,
     ) {
-        let (glyphs, w) = font.layout(s);
+        self.text_scaled(font, s, x, y, color, align, style, 1.0);
+    }
+
+    /// Como [`text`](Self::text) pero encogido si hace falta para no pasar de `max_width` px
+    /// (centrado en la misma línea). El campo de distancias se escala sin perder nitidez.
+    #[allow(clippy::too_many_arguments)]
+    pub fn text_fit(
+        &mut self,
+        font: &Font,
+        s: &str,
+        x: f32,
+        y: f32,
+        color: [f32; 4],
+        align: Align,
+        max_width: f32,
+    ) {
+        let k = fit_scale(font.width(s), max_width);
+        let y = y + font.line_height * (1.0 - k) / 2.0;
+        self.text_scaled(font, s, x, y, color, align, TextStyle::DEFAULT, k);
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn text_scaled(
+        &mut self,
+        font: &Font,
+        s: &str,
+        x: f32,
+        y: f32,
+        color: [f32; 4],
+        align: Align,
+        style: TextStyle,
+        size: f32,
+    ) {
+        let (mut glyphs, w) = font.layout(s);
+        for (_, gx) in &mut glyphs {
+            *gx *= size;
+        }
+        let w = w * size;
+        let scale = font.scale * size;
         let x0 = match align {
             Align::Left => x,
             Align::Center => x - w / 2.0,
             Align::Right => x - w,
         };
         // Px virtuales -> unidades del campo de distancias.
-        let units = |px: f32| px / font.scale / (2.0 * SPREAD as f32);
+        let units = |px: f32| px / scale / (2.0 * SPREAD as f32);
         let outline = style.outline.map_or(0.0, |(t, _)| units(t));
         let mut layer = |offset: [f32; 2], tint: [f32; 4], dilate: f32, soft: f32| {
             let mode = MODE_TEXT | distance_bits(dilate) << 16 | distance_bits(soft) << 24;
             for (g, gx) in &glyphs {
                 let dst = [
-                    x0 + gx + g.xmin * font.scale + offset[0],
-                    y + g.top * font.scale + offset[1],
-                    g.src[2] * font.scale,
-                    g.src[3] * font.scale,
+                    x0 + gx + g.xmin * scale + offset[0],
+                    y + g.top * scale + offset[1],
+                    g.src[2] * scale,
+                    g.src[3] * scale,
                 ];
                 self.push_quad(font.atlas, dst, g.src, tint, mode);
             }
@@ -366,6 +413,13 @@ mod tests {
         assert!(at(7, 15) < at(8, 15) && at(8, 15) < at(9, 15));
         // Lejos del borde se satura.
         assert_eq!(f[0], 0);
+    }
+
+    #[test]
+    fn encoge_solo_lo_que_no_cabe() {
+        assert_eq!(fit_scale(80.0, 114.0), 1.0);
+        assert_eq!(fit_scale(228.0, 114.0), 0.5);
+        assert_eq!(fit_scale(0.0, 0.0), 1.0);
     }
 
     #[test]

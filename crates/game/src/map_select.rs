@@ -167,14 +167,16 @@ impl MapSelect {
             30.0,
             srgb_rgba(255, 0, 0, 128),
         );
+        // En el original los nombres largos se pisan; aquí se encogen para caber en su casilla.
         for (i, name) in THEMES.iter().enumerate() {
-            r.text(
+            r.text_fit(
                 &a.font_small,
                 name,
                 90.0 + i as f32 * 120.0,
                 428.0,
                 col,
                 Align::Center,
+                112.0,
             );
         }
 
