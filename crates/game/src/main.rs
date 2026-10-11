@@ -6,6 +6,7 @@ mod audio;
 mod credits;
 mod draw;
 mod help;
+mod interp;
 mod intro;
 mod joystick;
 mod lighting;
@@ -112,6 +113,8 @@ struct App {
     ui: Ui,
     /// Ráfagas de partículas que salen de lo que pasa en la partida.
     sparks: Sparks,
+    /// Posiciones de antes del último tick, para dibujar a medio camino entre ticks.
+    prev: Option<interp::Snapshot>,
     keys: HashSet<KeyCode>,
     /// Pulsaciones de bomba pendientes de consumir en el próximo tick (una por flanco y teclado).
     bomb_latch: [bool; 3],
@@ -244,6 +247,7 @@ impl App {
         self.bomb_latch = [false; 3];
         self.ui = Ui::new();
         self.sparks = Sparks::new();
+        self.prev = None;
         self.screen = Screen::Game;
         self.paused = false;
         self.audio.set_music(self.play_music);
@@ -496,12 +500,15 @@ impl ApplicationHandler for App {
                         let dt = 1.0 / TICK_HZ as f64;
                         if self.paused || self.scripted {
                             self.acc = 0.0;
+                            // Sin interpolar: se dibuja el estado tal cual.
+                            self.prev = None;
                         }
                         let mut played = 0.0;
                         while self.acc >= dt {
                             played += dt as f32;
                             let inputs = self.inputs();
                             if let Some(w) = self.world.as_mut() {
+                                self.prev = Some(interp::Snapshot::of(w));
                                 w.step(&inputs);
                                 for e in w.take_events() {
                                     self.audio.play(e.into());
@@ -566,7 +573,13 @@ impl ApplicationHandler for App {
                         (Screen::Game, Some(world)) => draw::draw(
                             r,
                             a,
-                            world,
+                            // Entre dos ticks: lo que sobra en el acumulador dice cuánto.
+                            &match &self.prev {
+                                Some(p) => {
+                                    interp::view(world, p, (self.acc * TICK_HZ as f64) as f32)
+                                }
+                                None => world.clone(),
+                            },
                             &self.ui,
                             &self.sparks.shards,
                             &self.players,
@@ -650,6 +663,7 @@ fn main() {
         assets: None,
         ui: Ui::new(),
         sparks: Sparks::new(),
+        prev: None,
         keys: HashSet::new(),
         bomb_latch: [false; 3],
         gfx: None,

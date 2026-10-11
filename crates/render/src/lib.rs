@@ -141,7 +141,7 @@ impl Renderer {
         let shader = device.create_shader_module(wgpu::include_wgsl!("quad.wgsl"));
         let globals = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("globals"),
-            contents: bytemuck::cast_slice(&[VIRTUAL_W, VIRTUAL_H, 0.0, 0.0]),
+            contents: bytemuck::cast_slice(&[VIRTUAL_W, VIRTUAL_H, 0.0, 1.0]),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
         let bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -640,7 +640,12 @@ impl Renderer {
         self.queue.write_buffer(
             &self.globals,
             0,
-            bytemuck::cast_slice(&[VIRTUAL_W, VIRTUAL_H, time, 0.0]),
+            bytemuck::cast_slice(&[
+                VIRTUAL_W,
+                VIRTUAL_H,
+                time,
+                self.post.scene_size.0 as f32 / VIRTUAL_W,
+            ]),
         );
 
         let mut enc = self.device.create_command_encoder(&Default::default());
