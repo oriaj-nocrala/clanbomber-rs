@@ -453,7 +453,7 @@ impl Renderer {
         // Invertido: la fila f del reflejo es la fila (1 - f) del sprite.
         let v = |f: f32| (src[1] + src[3] * (1.0 - f)) / th;
         let tint = [0.8, 0.9, 1.0];
-        let color = |f: f32| [tint[0], tint[1], tint[2], alpha * (1.0 - f).powf(1.3)];
+        let color = |f: f32| [tint[0], tint[1], tint[2], alpha * reflection_fade(f)];
         let vert = |px, py, fx, fy| Vertex {
             pos: [px, py],
             uv: [u(fx), v(fy)],
@@ -894,6 +894,13 @@ impl Renderer {
 }
 
 /// Rectángulo 4:3 centrado en una ventana de `w`x`h` (x, y, ancho, alto) y su tamaño en píxeles.
+/// Opacidad del reflejo a la altura `f` (0 junto a los pies, 1 al final). Con posiciones
+/// fraccionarias `f` puede pasar de 1 por redondeo, y una base negativa en `powf` da NaN: un
+/// píxel NaN que el bloom convertía en un cuadrado negro.
+fn reflection_fade(f: f32) -> f32 {
+    (1.0 - f).clamp(0.0, 1.0).powf(1.3)
+}
+
 fn letterbox(w: u32, h: u32) -> ([f32; 4], (u32, u32)) {
     let (sw, sh) = (w as f32, h as f32);
     let scale = (sw / VIRTUAL_W).min(sh / VIRTUAL_H);
@@ -902,4 +909,19 @@ fn letterbox(w: u32, h: u32) -> ([f32; 4], (u32, u32)) {
         [((sw - vw) / 2.0).floor(), ((sh - vh) / 2.0).floor(), vw, vh],
         (vw.max(1.0) as u32, vh.max(1.0) as u32),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::reflection_fade;
+
+    #[test]
+    fn reflection_fade_never_nan() {
+        // `top + h - top` puede dar algo más que `h` con posiciones fraccionarias.
+        for f in [-0.001, 0.0, 0.5, 1.0, 1.000_000_1, 1.5] {
+            let a = reflection_fade(f);
+            assert!(a.is_finite() && (0.0..=1.0).contains(&a), "f = {f}: {a}");
+        }
+        assert_eq!(reflection_fade(1.000_000_1), 0.0);
+    }
 }
