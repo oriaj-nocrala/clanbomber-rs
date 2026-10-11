@@ -1,7 +1,7 @@
 //! Guion para sacar las capturas del README (`--screenshots DIR`). Monta cada pantalla del juego,
 //! la deja dibujarse un par de fotogramas y pide al renderizador que guarde el lienzo virtual
-//! (800x600) en un PNG: no se captura el escritorio. Al final monta un GIF de una partida entre
-//! IAs con `magick`.
+//! (800x600) en un PNG: no se captura el escritorio. Al final monta con `magick` un GIF de una
+//! partida entre IAs y otro de la cámara lenta en la muerte que decide una ronda.
 
 use std::path::PathBuf;
 
@@ -14,6 +14,7 @@ use crate::help::Help;
 use crate::map_editor::MapEditor;
 use crate::map_select::MapSelect;
 use crate::player_setup::PlayerSetup;
+use crate::slowmo;
 use crate::{all_maps, maps_dir, user_maps_dir, App, Screen};
 
 /// Semilla fija: las capturas salen igual cada vez.
@@ -21,6 +22,8 @@ const SEED: u64 = 7;
 /// Fotogramas del GIF (a 10 por segundo) y ticks de simulación entre uno y otro.
 const GIF_FRAMES: u32 = 110;
 const GIF_TICKS_PER_FRAME: u32 = 6;
+/// El GIF de la cámara lenta empieza estos ticks antes de la muerte.
+const SLOWMO_LEAD: u32 = 60 * 2;
 
 const SCENES: &[&str] = &[
     "menu",
@@ -35,6 +38,7 @@ const SCENES: &[&str] = &[
     "credits",
     "help",
     "gameplay-gif",
+    "slow-motion-gif",
 ];
 
 pub struct Shots {
@@ -44,16 +48,21 @@ pub struct Shots {
     frame: u32,
     /// Fotogramas del GIF ya guardados.
     gif_done: u32,
+    /// Ticks pendientes (fracción) en la cámara lenta.
+    acc: f32,
+    /// Ticks que faltan para la muerte del GIF de cámara lenta.
+    lead: u32,
 }
 
 impl Shots {
     pub fn new(dir: PathBuf) -> Self {
-        let _ = std::fs::create_dir_all(dir.join("frames"));
         Shots {
             dir,
             scene: 0,
             frame: 0,
             gif_done: 0,
+            acc: 0.0,
+            lead: 0,
         }
     }
 }
@@ -83,7 +92,9 @@ impl App {
     fn sim(&mut self, ticks: u32) {
         if let Some(w) = self.world.as_mut() {
             for _ in 0..ticks {
+                let was = slowmo::Before::of(w);
                 w.step(&[]);
+                self.slowmo.after_tick(w, &was);
                 w.take_events();
             }
             // Las partículas avanzan al mismo reloj que la partida (para el GIF).
@@ -111,6 +122,40 @@ impl App {
             }
             self.sim(1);
         }
+    }
+
+    /// La ronda que antes acabe en asesinato (no suicidio) en el tema con ascuas y calor: la
+    /// relanza y devuelve cuántos ticks faltan para la muerte que dispara la cámara lenta.
+    fn murder_round(&mut self) -> u32 {
+        let mut found = None;
+        for seed in SEED + 40..SEED + 56 {
+            self.start_murder_round(seed);
+            let mut ticks = 0;
+            while ticks < 60 * 120 && !self.slowmo.active() {
+                self.sim(1);
+                ticks += 1;
+            }
+            let murder = self
+                .slowmo
+                .highlight()
+                .is_some_and(|h| h.killer.is_some_and(|k| k != h.victim));
+            // La más temprana: el muerto suelta menos extras y se ve mejor cómo se quema.
+            if murder && found.is_none_or(|(_, t)| ticks < t) {
+                found = Some((seed, ticks));
+            }
+        }
+        let (seed, ticks): (u64, u32) = found.unwrap_or((SEED + 40, 0));
+        // Determinista: con la misma semilla la muerte llega en el mismo tick.
+        self.start_murder_round(seed);
+        let skip = ticks.saturating_sub(SLOWMO_LEAD);
+        self.sim(skip);
+        ticks - skip
+    }
+
+    fn start_murder_round(&mut self, seed: u64) {
+        let cfg = config_with(&[(0, AI, 0), (5, AI, 0)], 4);
+        self.launch(cfg, seed, Some("Arena"));
+        self.scripted = true;
     }
 
     fn setup_scene(&mut self, name: &str) {
@@ -231,11 +276,47 @@ impl App {
             return;
         };
 
-        if name == "gameplay-gif" {
+        if name == "gameplay-gif" || name == "slow-motion-gif" {
+            let slow = name == "slow-motion-gif";
             if sh.frame == 0 {
-                self.setup_scene(name);
-            } else if sh.gif_done < GIF_FRAMES {
-                self.sim(GIF_TICKS_PER_FRAME);
+                let _ = std::fs::create_dir_all(sh.dir.join("frames"));
+                if slow {
+                    sh.lead = self.murder_round();
+                    sh.acc = 0.0;
+                } else {
+                    self.setup_scene(name);
+                }
+            } else if sh.frame > 1 && !slow && sh.gif_done >= GIF_FRAMES
+                || slow && sh.gif_done > 0 && sh.lead == 0 && !self.slowmo.active()
+            {
+                let out = if slow {
+                    "slow-motion.gif"
+                } else {
+                    "gameplay.gif"
+                };
+                build_gif(&sh.dir, out);
+                sh.scene += 1;
+                sh.frame = 0;
+                sh.gif_done = 0;
+                self.shots = Some(sh);
+                return;
+            } else {
+                if slow && sh.lead > 0 {
+                    // Hasta la muerte, a velocidad normal.
+                    let n = sh.lead.min(GIF_TICKS_PER_FRAME);
+                    self.sim(n);
+                    sh.lead -= n;
+                } else if slow {
+                    // Una décima de segundo real: el juego avanza lo que diga la cámara lenta.
+                    let scale = self.slowmo.time_scale() as f32;
+                    self.slowmo.advance(0.1);
+                    sh.acc += 0.1 * scale * cb_core::TICK_HZ as f32;
+                    let n = sh.acc.floor();
+                    sh.acc -= n;
+                    self.sim(n as u32);
+                } else {
+                    self.sim(GIF_TICKS_PER_FRAME);
+                }
                 let path = sh
                     .dir
                     .join("frames")
@@ -244,12 +325,6 @@ impl App {
                     r.request_capture(path);
                 }
                 sh.gif_done += 1;
-            } else {
-                build_gif(&sh.dir);
-                sh.scene += 1;
-                sh.frame = 0;
-                self.shots = Some(sh);
-                return;
             }
             sh.frame += 1;
             self.shots = Some(sh);
@@ -278,14 +353,17 @@ impl App {
     }
 }
 
-/// Une los fotogramas en `gameplay.gif` (480x360, 10 fps, paleta reducida) y los borra.
-fn build_gif(dir: &std::path::Path) {
+/// Une los fotogramas en `name` (480x360, 10 fps, paleta reducida; `-fuzz` deja sin tocar los
+/// píxeles que apenas cambian, que con el grano de las partículas son casi todos) y los borra.
+fn build_gif(dir: &std::path::Path, name: &str) {
     let frames = dir.join("frames");
-    let out = dir.join("gameplay.gif");
+    let out = dir.join(name);
     let status = std::process::Command::new("magick")
         .args(["-delay", "10", "-loop", "0"])
         .arg(frames.join("frame-*.png"))
-        .args(["-resize", "480x360", "-layers", "Optimize", "-colors", "96"])
+        .args([
+            "-resize", "480x360", "-fuzz", "3%", "-layers", "Optimize", "-colors", "96",
+        ])
         .arg(&out)
         .status();
     match status {

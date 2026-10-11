@@ -510,7 +510,8 @@ impl ApplicationHandler for App {
                     Screen::Game => {
                         // Paso fijo: la simulación avanza en ticks de 1/TICK_HZ, independiente del framerate.
                         // La cámara lenta solo reparte el tiempo real más despacio entre los ticks.
-                        if !self.paused {
+                        // En las capturas el guion lleva el reloj de la cámara lenta.
+                        if !self.paused && !self.scripted {
                             self.slowmo.advance(frame as f32);
                         }
                         let scale = if self.video.shockwaves {
@@ -578,7 +579,8 @@ impl ApplicationHandler for App {
                         }
                         if let Some((_, r)) = self.gfx.as_mut() {
                             let shaking = self.world.as_ref().is_some_and(|w| w.shake > 0);
-                            let live = !self.paused && self.frozen.is_none();
+                            // Las capturas (`scripted`) salen sin el temblor ni su aberración de color.
+                            let live = !self.paused && self.frozen.is_none() && !self.scripted;
                             r.set_shake(if shaking && live { 1.0 } else { 0.0 });
                             let world = self.frozen.as_ref().or(self.world.as_ref());
                             r.set_camera(match world.filter(|_| self.video.shockwaves) {

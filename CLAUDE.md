@@ -13,7 +13,7 @@ renderizado una vez con `openmpt123 --render` + `ffmpeg`; ya no hay dependencia 
 
 ```bash
 cargo run -p cb-game                         # el juego (empieza en la intro); el binario se llama clanbomber-rs
-cargo run -p cb-game -- --screenshots docs/img   # recorre las pantallas y guarda PNG + GIF (render offscreen)
+cargo run -p cb-game -- --screenshots docs/img   # recorre las pantallas y guarda PNG + 2 GIF (render offscreen)
 cargo test                                  # incluye parseo de los 33 mapas
 cargo fmt
 ```
@@ -26,7 +26,7 @@ cargo fmt
   bombas/explosiones, extras y `World::step` (`sim.rs`).
 - `crates/render` (`cb-render`): wgpu. Batcher de quads en resolución virtual 800x600 con letterbox,
   texturas (`load_texture`), hojas de sprites (`Sheet`), texto TrueType en campo de distancias (`text.rs`:
-  atlas SDF a 48 px con muestreo bilineal, kerning, sombra suave y contorno con `text_styled`; vía `fontdue`), shader en `quad.wgsl`. La escena se dibuja en una textura `Rgba16Float`
+  atlas SDF a 48 px con muestreo bilineal, kerning, sombra suave y contorno con `text_styled`, `text_fit` encoge lo que no cabe; vía `fontdue`), shader en `quad.wgsl`. La escena se dibuja en una textura `Rgba16Float`
   intermedia (al tamaño del letterbox) y `fx.rs` la compone en la ventana: partículas simuladas por compute
   (`particles.wgsl`, anillo de 16384; la CPU solo manda `Burst`s), bloom por compute (`bloom.wgsl`, a 400x300)
   y composición con CRT opcional, aberración al temblar, ondas expansivas, aire caliente y cámara (`Camera`: zoom, foco y desaturación
