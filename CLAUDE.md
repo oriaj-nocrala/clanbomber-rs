@@ -25,13 +25,14 @@ cargo fmt
   (`movement.rs`, port de `GameObject::move_*`), IA (`ai.rs`), vuelo en arco (`flight.rs`), bombers, enfermedades,
   bombas/explosiones, extras y `World::step` (`sim.rs`).
 - `crates/render` (`cb-render`): wgpu. Batcher de quads en resolución virtual 800x600 con letterbox,
-  texturas (`load_texture`), hojas de sprites (`Sheet`), texto TrueType con atlas de glifos (`load_font`,
-  `text`, vía `fontdue`), shader en `quad.wgsl`. La escena se dibuja en una textura `Rgba16Float`
+  texturas (`load_texture`), hojas de sprites (`Sheet`), texto TrueType en campo de distancias (`text.rs`:
+  atlas SDF a 48 px con muestreo bilineal, kerning, sombra suave y contorno con `text_styled`; vía `fontdue`), shader en `quad.wgsl`. La escena se dibuja en una textura `Rgba16Float`
   intermedia (al tamaño del letterbox) y `fx.rs` la compone en la ventana: partículas simuladas por compute
   (`particles.wgsl`, anillo de 16384; la CPU solo manda `Burst`s), bloom por compute (`bloom.wgsl`, a 400x300)
   y composición con CRT opcional, aberración al temblar, ondas expansivas, aire caliente y cámara (`Camera`: zoom, foco y desaturación
   dramática; `post.wgsl`).
   `quad.wgsl` tiene modos por vértice: normal, silueta (estelas), brillo de hielo, tono girando (enfermedad),
+  texto SDF (TEXT: engorde y difuminado en los bits altos del modo),
   reflejo (`sprite_reflection`: invertido y recortado a las casillas de hielo) y quemar/revelar
   (`sprite_burn`/`sprite_reveal`: el avance va en los 16 bits altos del modo y el centro en el color)
   y el cronómetro del HUD dibujado entero por SDF (`Renderer::stopwatch`, con "Sprite Effects").

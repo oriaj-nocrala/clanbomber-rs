@@ -15,7 +15,7 @@ use winit::window::Window;
 pub use fire::Fire;
 pub use fx::{Burst, Camera, Effects, ParticleKind, MAX_SPOTS};
 pub use light::{Light, Lighting};
-pub use text::{Align, Font, FontError};
+pub use text::{Align, Font, FontError, Shadow, TextStyle};
 
 pub const VIRTUAL_W: f32 = 800.0;
 pub const VIRTUAL_H: f32 = 600.0;
@@ -69,7 +69,7 @@ struct Vertex {
     pos: [f32; 2],
     uv: [f32; 2],
     color: [f32; 4],
-    /// Modo de dibujo de `quad.wgsl` (NORMAL, SILHOUETTE, ICE, HUE).
+    /// Modo de dibujo de `quad.wgsl` (NORMAL, SILHOUETTE, ICE, HUE, ...).
     mode: u32,
 }
 
@@ -81,6 +81,7 @@ const MODE_REFLECT: u32 = 4;
 const MODE_BURN: u32 = 5;
 const MODE_REVEAL: u32 = 6;
 const MODE_WATCH: u32 = 7;
+const MODE_TEXT: u32 = 8;
 
 pub struct Renderer {
     surface: wgpu::Surface<'static>,
@@ -91,6 +92,8 @@ pub struct Renderer {
     bind_group: wgpu::BindGroup,
     tex_layout: wgpu::BindGroupLayout,
     sampler: wgpu::Sampler,
+    /// Bilineal: para los campos de distancias del texto.
+    smooth_sampler: wgpu::Sampler,
     textures: Vec<Texture>,
     batches: Vec<Batch>,
     fire: fire::FirePipeline,
@@ -198,6 +201,11 @@ impl Renderer {
             min_filter: wgpu::FilterMode::Nearest,
             ..Default::default()
         });
+        let smooth_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            ..Default::default()
+        });
         let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: None,
             bind_group_layouts: &[Some(&bgl), Some(&tex_layout)],
@@ -267,6 +275,7 @@ impl Renderer {
             bind_group,
             tex_layout,
             sampler,
+            smooth_sampler,
             textures: Vec::new(),
             batches: Vec::new(),
             fire,
@@ -303,6 +312,15 @@ impl Renderer {
     }
 
     pub fn load_rgba(&mut self, rgba: &[u8], w: u32, h: u32) -> TextureId {
+        self.upload(rgba, w, h, false)
+    }
+
+    /// Como [`load_rgba`](Self::load_rgba) pero con filtrado bilineal (no es pixel art).
+    pub fn load_rgba_smooth(&mut self, rgba: &[u8], w: u32, h: u32) -> TextureId {
+        self.upload(rgba, w, h, true)
+    }
+
+    fn upload(&mut self, rgba: &[u8], w: u32, h: u32, smooth: bool) -> TextureId {
         let tex = self.device.create_texture_with_data(
             &self.queue,
             &wgpu::TextureDescriptor {
@@ -333,7 +351,11 @@ impl Renderer {
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
-                    resource: wgpu::BindingResource::Sampler(&self.sampler),
+                    resource: wgpu::BindingResource::Sampler(if smooth {
+                        &self.smooth_sampler
+                    } else {
+                        &self.sampler
+                    }),
                 },
             ],
         });
@@ -965,7 +987,6 @@ impl Renderer {
     }
 }
 
-/// Rectángulo 4:3 centrado en una ventana de `w`x`h` (x, y, ancho, alto) y su tamaño en píxeles.
 /// Avance 0..1 en los 16 bits altos del modo del vértice (`quad.wgsl`).
 fn progress_bits(progress: f32) -> u32 {
     let p = if progress.is_finite() {
@@ -983,6 +1004,7 @@ fn reflection_fade(f: f32) -> f32 {
     (1.0 - f).clamp(0.0, 1.0).powf(1.3)
 }
 
+/// Rectángulo 4:3 centrado en una ventana de `w`x`h` (x, y, ancho, alto) y su tamaño en píxeles.
 fn letterbox(w: u32, h: u32) -> ([f32; 4], (u32, u32)) {
     let (sw, sh) = (w as f32, h as f32);
     let scale = (sw / VIRTUAL_W).min(sh / VIRTUAL_H);
