@@ -504,6 +504,18 @@ impl Renderer {
         );
     }
 
+    /// Rectángulo de color plano centrado en `center` y girado `angle` radianes (hojas).
+    pub fn quad_rotated(&mut self, center: [f32; 2], size: [f32; 2], angle: f32, color: [f32; 4]) {
+        self.sprite_rotated(
+            TextureId(0),
+            [0.0, 0.0, 1.0, 1.0],
+            center,
+            size,
+            angle,
+            color,
+        );
+    }
+
     /// Destello de hielo animado sobre el rectángulo `dst` (se dibuja encima de la casilla).
     pub fn ice_shine(&mut self, dst: [f32; 4], alpha: f32) {
         self.push_quad(

@@ -590,10 +590,17 @@ fn draw_game(r: &mut Renderer, a: &Assets, w: &World, ui: &Ui, fx: &Sparks, play
     // Trozos de cajas y extras, en el aire sobre todo lo demás.
     fx.shards.draw_shards(r, a);
     fx.haze.apply(r, w);
+    let weather = r.effects().particles;
+    if weather {
+        fx.weather.draw_lit(r);
+    }
     // Luz dinámica sobre todo lo anterior; las partículas, que ya brillan, van encima.
     crate::lighting::apply(r, w, players);
     // Partículas (chispas, cascotes, humo) sobre el mapa y bajo el reloj del observador.
     r.particle_layer();
+    if weather {
+        fx.weather.draw_glow(r);
+    }
     fx.shards.draw_pops(r, a);
     draw_observer(r, a, w);
 }

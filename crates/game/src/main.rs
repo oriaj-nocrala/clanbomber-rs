@@ -22,6 +22,7 @@ mod shots;
 mod slowmo;
 mod sparks;
 mod video;
+mod weather;
 
 use std::collections::HashSet;
 use std::path::PathBuf;
