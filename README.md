@@ -24,7 +24,7 @@ Up to 8 players, AI opponents, gamepads, 33 maps, power-ups, diseases, ice, trap
 
 <sub>Four AIs on <i>FireWheels</i>, with arrows pushing bombs around. Recorded by the game itself (<code>--screenshots</code>).</sub>
 
-**🇬🇧 English** · 🇪🇸 Español: expand **“Leer en español”** at the bottom ↓
+**🇬🇧 English** · 🇨🇱 Español: expand **“Leer en español”** at the bottom ↓
 
 </div>
 
@@ -224,7 +224,7 @@ This is an independent, unofficial port. All the Rust code is new.
 ---
 
 <details>
-<summary><b>🇪🇸 Leer en español</b> — versión completa en español</summary>
+<summary><b>🇨🇱 Leer en español</b> — versión completa en español</summary>
 
 ### ✨ ¿Qué es?
 
