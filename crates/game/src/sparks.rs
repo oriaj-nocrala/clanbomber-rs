@@ -8,6 +8,7 @@ use cb_render::{Burst, ParticleKind, Renderer};
 use crate::assets::Assets;
 use crate::haze::Haze;
 use crate::shards::{Shards, Source};
+use crate::steps::Steps;
 use crate::weather::Weather;
 
 use crate::draw::{skin_color, speed_level, srgb_rgba, Player};
@@ -44,6 +45,7 @@ pub struct Sparks {
     pub haze: Haze,
     /// Clima del tema (nieve, hojas...).
     pub weather: Weather,
+    steps: Steps,
 }
 
 fn tile_center(tx: i32, ty: i32) -> [f32; 2] {
@@ -68,6 +70,7 @@ impl Sparks {
             self.weather.update(w.config.theme, dt);
         }
         if !matches!(w.phase, Phase::Playing) {
+            self.steps.reset();
             self.tracking = false;
             self.shards.clear();
             return;
@@ -123,6 +126,7 @@ impl Sparks {
                 }
             }
             fuses(r, w);
+            self.steps.update(r, w);
             speed_sparks(r, w, players);
         }
 
