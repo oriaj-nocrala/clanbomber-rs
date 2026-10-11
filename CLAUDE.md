@@ -45,6 +45,7 @@ cargo fmt
   dispersión de color. `haze.rs` (juego) pone el calor: llamas, brasas que suben al apagarse y mechas.
   `weather.rs`: clima por tema (nieve, hojas, esporas, ceniza, ascuas, motas), simulado en CPU y dibujado
   antes de la iluminación para que la luz lo alumbre (las ascuas brillan solas, después); va con "Particles".
+  `steps.rs`: polvo al frenar o girar y escarcha al patinar en hielo (compara posiciones entre ticks).
   `slowmo.rs`: cámara lenta en la muerte que decide la ronda; solo escala el tiempo que recibe el
   acumulador (los ticks son los mismos, determinista) y acerca la cámara. Si la ronda acaba en plena
   cámara lenta se congela el último fotograma hasta que termina. Va con la opción "Cinematic Effects".

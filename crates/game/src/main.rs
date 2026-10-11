@@ -21,6 +21,7 @@ mod shards;
 mod shots;
 mod slowmo;
 mod sparks;
+mod steps;
 mod video;
 mod weather;
 
