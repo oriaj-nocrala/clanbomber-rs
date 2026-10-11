@@ -14,6 +14,12 @@ const ICE: u32 = 2u;
 const HUE: u32 = 3u;
 // Reflejo en el hielo: el sprite (ya invertido por los UV) con rielado por líneas.
 const REFLECT: u32 = 4u;
+// Muerte: el sprite se quema desde un punto hacia fuera, con un frente incandescente...
+const BURN: u32 = 5u;
+// ...y el cadáver aparece por los mismos píxeles. El avance (0..1) va en los 16 bits altos del
+// modo y el centro y radio de la quemadura en `color.rgb` (px virtuales), para no tocar el
+// formato del vértice.
+const REVEAL: u32 = 6u;
 
 struct VsOut {
     @builtin(position) pos: vec4<f32>,
@@ -52,10 +58,35 @@ fn rotate_hue(c: vec3<f32>, angle: f32) -> vec3<f32> {
     return c * cs + cross(k, c) * sin(angle) + k * dot(k, c) * (1.0 - cs);
 }
 
+// Patrón de la quemadura (0..1): sobre todo la distancia al centro (un frente que avanza),
+// deformada por ruido de valor para que el borde sea irregular.
+fn burn_field(world: vec2<f32>, color: vec4<f32>) -> f32 {
+    let q = floor(world);
+    let radial = clamp(length(q + 0.5 - color.xy) / max(color.z, 1.0), 0.0, 1.0);
+    let p = q / 4.0;
+    let i = floor(p);
+    let f = fract(p);
+    let u = f * f * (3.0 - 2.0 * f);
+    let n = mix(
+        mix(hash(i), hash(i + vec2<f32>(1.0, 0.0)), u.x),
+        mix(hash(i + vec2<f32>(0.0, 1.0)), hash(i + vec2<f32>(1.0, 1.0)), u.x),
+        u.y,
+    );
+    // Un poco de grano por píxel: bordes que se desmoronan en vez de curvas lisas.
+    let noise = n * 0.9 + hash(q + 911.0) * 0.1;
+    return radial * 0.6 + noise * 0.4;
+}
+
+// Umbral del patrón según el avance: con 0 no se ha quemado nada y con 1 todo.
+fn burn_threshold(mode: u32) -> f32 {
+    let progress = f32(mode >> 16u) / 65535.0;
+    return mix(-0.2, 1.2, progress);
+}
+
 @fragment
 fn fs(in: VsOut) -> @location(0) vec4<f32> {
     let texel = textureSample(tex, samp, in.uv);
-    switch in.mode {
+    switch in.mode & 0xffffu {
         case SILHOUETTE: {
             return vec4<f32>(in.color.rgb, texel.a * in.color.a);
         }
@@ -78,6 +109,25 @@ fn fs(in: VsOut) -> @location(0) vec4<f32> {
             let row = floor(in.world.y);
             let shimmer = 0.75 + 0.25 * sin(row * 0.9 - g.time * 5.0);
             return vec4<f32>(texel.rgb * in.color.rgb, texel.a * in.color.a * shimmer);
+        }
+        case BURN: {
+            let f = burn_field(in.world, in.color);
+            let th = burn_threshold(in.mode);
+            // Ya quemado: nada. En el frente, brasa "HDR": blanca justo en el borde, naranja y
+            // luego rojo oscuro hacia el sprite que aún no arde.
+            let keep = step(th, f);
+            let e = 1.0 - smoothstep(0.0, 0.12, f - th);
+            let hot = mix(vec3<f32>(1.2, 0.2, 0.03), vec3<f32>(4.5, 2.6, 1.0), e * e);
+            return vec4<f32>(mix(texel.rgb, hot, smoothstep(0.0, 0.35, e)), texel.a * keep);
+        }
+        case REVEAL: {
+            let f = burn_field(in.world, in.color);
+            let th = burn_threshold(in.mode);
+            // Aparece por donde ya se quemó (con un poco de solape para que no quede hueco),
+            // chamuscado junto al frente.
+            let keep = step(f, th + 0.03);
+            let scorch = smoothstep(th - 0.1, th + 0.03, f);
+            return vec4<f32>(texel.rgb * mix(1.0, 0.3, scorch), texel.a * in.color.a * keep);
         }
         case HUE: {
             let c = rotate_hue(texel.rgb, g.time * 4.0);

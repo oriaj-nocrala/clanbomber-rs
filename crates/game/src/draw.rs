@@ -366,9 +366,13 @@ fn draw_game(r: &mut Renderer, a: &Assets, w: &World, ui: &Ui, fx: &Sparks, play
             );
         }
     }
-    // Cadáveres (Z_CORPSE = 100 + y): sobre el suelo, bajo los extras.
+    // Cadáveres (Z_CORPSE = 100 + y): sobre el suelo, bajo los extras. Los recién muertos
+    // aparecen quemando al bomber (`dying.rs`).
     for o in &w.objects {
         if let Object::Corpse(c) = o {
+            if sprite_fx && !c.falling && fx.deaths.burning(c.owner) {
+                continue;
+            }
             let skin = &a.skins[players[c.owner].skin];
             let pos = (ox + c.x, oy + c.y);
             if c.falling {
@@ -389,6 +393,9 @@ fn draw_game(r: &mut Renderer, a: &Assets, w: &World, ui: &Ui, fx: &Sparks, play
                 );
             }
         }
+    }
+    if sprite_fx {
+        fx.deaths.draw_burns(r, a, w, players);
     }
     // Un extra que arde ya se partió en trozos (con los efectos de sprites): no se dibuja.
     for e in w
@@ -602,6 +609,9 @@ fn draw_game(r: &mut Renderer, a: &Assets, w: &World, ui: &Ui, fx: &Sparks, play
         fx.weather.draw_glow(r);
     }
     fx.shards.draw_pops(r, a);
+    if sprite_fx {
+        fx.deaths.draw_souls(r, a, w, players);
+    }
     draw_observer(r, a, w);
 }
 

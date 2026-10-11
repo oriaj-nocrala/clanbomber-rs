@@ -78,6 +78,8 @@ const MODE_SILHOUETTE: u32 = 1;
 const MODE_ICE: u32 = 2;
 const MODE_HUE: u32 = 3;
 const MODE_REFLECT: u32 = 4;
+const MODE_BURN: u32 = 5;
+const MODE_REVEAL: u32 = 6;
 
 pub struct Renderer {
     surface: wgpu::Surface<'static>,
@@ -419,6 +421,40 @@ impl Renderer {
         color: [f32; 4],
     ) {
         self.push_quad(tex, dst, src, color, MODE_SILHOUETTE);
+    }
+
+    /// Sprite que se quema desde `center` hacia fuera hasta `radius` (px virtuales): con
+    /// `progress` 0 entero y con 1 desaparecido, con un frente incandescente. El patrón depende
+    /// de la posición en pantalla, así que coincide con el de
+    /// [`sprite_reveal`](Self::sprite_reveal) con el mismo centro.
+    pub fn sprite_burn(
+        &mut self,
+        tex: TextureId,
+        src: [f32; 4],
+        dst: [f32; 4],
+        progress: f32,
+        center: [f32; 2],
+        radius: f32,
+    ) {
+        let mode = MODE_BURN | progress_bits(progress);
+        self.push_quad(tex, dst, src, [center[0], center[1], radius, 1.0], mode);
+    }
+
+    /// Sprite que aparece por donde [`sprite_burn`](Self::sprite_burn) ya quemó, con el mismo
+    /// `progress`, centro y radio.
+    #[allow(clippy::too_many_arguments)]
+    pub fn sprite_reveal(
+        &mut self,
+        tex: TextureId,
+        src: [f32; 4],
+        dst: [f32; 4],
+        progress: f32,
+        center: [f32; 2],
+        radius: f32,
+        alpha: f32,
+    ) {
+        let mode = MODE_REVEAL | progress_bits(progress);
+        self.push_quad(tex, dst, src, [center[0], center[1], radius, alpha], mode);
     }
 
     /// Sprite con el tono girando en el tiempo; `amount` en [0, 1] mezcla con el original.
@@ -894,6 +930,16 @@ impl Renderer {
 }
 
 /// Rectángulo 4:3 centrado en una ventana de `w`x`h` (x, y, ancho, alto) y su tamaño en píxeles.
+/// Avance 0..1 en los 16 bits altos del modo del vértice (`quad.wgsl`).
+fn progress_bits(progress: f32) -> u32 {
+    let p = if progress.is_finite() {
+        progress.clamp(0.0, 1.0)
+    } else {
+        1.0
+    };
+    ((p * 65535.0).round() as u32) << 16
+}
+
 /// Opacidad del reflejo a la altura `f` (0 junto a los pies, 1 al final). Con posiciones
 /// fraccionarias `f` puede pasar de 1 por redondeo, y una base negativa en `powf` da NaN: un
 /// píxel NaN que el bloom convertía en un cuadrado negro.

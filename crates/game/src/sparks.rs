@@ -6,6 +6,7 @@ use cb_core::{ExtraKind, Phase, World, TILE_PIXELS};
 use cb_render::{Burst, ParticleKind, Renderer};
 
 use crate::assets::Assets;
+use crate::dying::Deaths;
 use crate::haze::Haze;
 use crate::shards::{Shards, Source};
 use crate::steps::Steps;
@@ -43,6 +44,8 @@ pub struct Sparks {
     pub shards: Shards,
     /// Aire caliente sobre el fuego y las mechas.
     pub haze: Haze,
+    /// Bombers que acaban de morir (se queman y sube su silueta).
+    pub deaths: Deaths,
     /// Clima del tema (nieve, hojas...).
     pub weather: Weather,
     steps: Steps,
@@ -66,6 +69,7 @@ impl Sparks {
     pub fn update(&mut self, r: &mut Renderer, a: &Assets, w: &World, players: &[Player], dt: f32) {
         self.shards.update(dt);
         self.haze.update(w, dt);
+        self.deaths.update(w, dt);
         if r.effects().particles {
             self.weather.update(w.config.theme, dt);
         }
