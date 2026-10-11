@@ -15,6 +15,7 @@ mod menu;
 mod paths;
 mod player_setup;
 mod screen;
+mod shards;
 mod shots;
 mod sparks;
 mod video;
@@ -518,8 +519,8 @@ impl ApplicationHandler for App {
                                     .collect();
                                 self.ui.update_trails(w, played, &skins);
                             }
-                            if let Some((_, r)) = self.gfx.as_mut() {
-                                self.sparks.update(r, w, &self.players, played);
+                            if let (Some((_, r)), Some(a)) = (self.gfx.as_mut(), &self.assets) {
+                                self.sparks.update(r, a, w, &self.players, played);
                                 r.advance_particles(played);
                                 r.set_shake(if w.shake > 0 && !self.paused {
                                     1.0
@@ -562,9 +563,15 @@ impl ApplicationHandler for App {
                 let time = self.started.elapsed().as_secs_f32();
                 if let (Some((w, r)), Some(a)) = (self.gfx.as_mut(), self.assets.as_ref()) {
                     match (&self.screen, &self.world) {
-                        (Screen::Game, Some(world)) => {
-                            draw::draw(r, a, world, &self.ui, &self.players, self.paused)
-                        }
+                        (Screen::Game, Some(world)) => draw::draw(
+                            r,
+                            a,
+                            world,
+                            &self.ui,
+                            &self.sparks.shards,
+                            &self.players,
+                            self.paused,
+                        ),
                         (Screen::PlayerSetup(s), _) => {
                             s.draw(r, a, &self.config, time);
                             r.render();

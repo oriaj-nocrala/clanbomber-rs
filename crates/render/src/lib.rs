@@ -460,6 +460,39 @@ impl Renderer {
         );
     }
 
+    /// Región `src` de una textura dibujada centrada en `center`, de tamaño `size` y girada
+    /// `angle` radianes (trozos que vuelan).
+    pub fn sprite_rotated(
+        &mut self,
+        tex: TextureId,
+        src: [f32; 4],
+        center: [f32; 2],
+        size: [f32; 2],
+        angle: f32,
+        tint: [f32; 4],
+    ) {
+        let (tw, th) = self.textures[tex.0].size;
+        let (u0, v0) = (src[0] / tw, src[1] / th);
+        let (u1, v1) = ((src[0] + src[2]) / tw, (src[1] + src[3]) / th);
+        let (s, c) = angle.sin_cos();
+        let (hw, hh) = (size[0] / 2.0, size[1] / 2.0);
+        let vert = |dx: f32, dy: f32, u: f32, v: f32| Vertex {
+            pos: [center[0] + dx * c - dy * s, center[1] + dx * s + dy * c],
+            uv: [u, v],
+            color: tint,
+            mode: MODE_NORMAL,
+        };
+        self.push_vertices(
+            tex,
+            [
+                vert(-hw, -hh, u0, v0),
+                vert(hw, -hh, u1, v0),
+                vert(-hw, hh, u0, v1),
+                vert(hw, hh, u1, v1),
+            ],
+        );
+    }
+
     /// Destello de hielo animado sobre el rectángulo `dst` (se dibuja encima de la casilla).
     pub fn ice_shine(&mut self, dst: [f32; 4], alpha: f32) {
         self.push_quad(
