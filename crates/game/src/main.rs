@@ -534,11 +534,10 @@ impl ApplicationHandler for App {
                             let inputs = self.inputs();
                             if let Some(w) = self.world.as_mut() {
                                 self.prev = Some(interp::Snapshot::of(w));
-                                let was_dead: Vec<bool> =
-                                    w.bombers.iter().map(|b| b.dead).collect();
+                                let was = slowmo::Before::of(w);
                                 let before = self.slowmo.active().then(|| w.clone());
                                 w.step(&inputs);
-                                self.slowmo.after_tick(w, &was_dead);
+                                self.slowmo.after_tick(w, &was);
                                 for e in w.take_events() {
                                     self.audio.play(e.into());
                                 }
@@ -581,10 +580,10 @@ impl ApplicationHandler for App {
                             let shaking = self.world.as_ref().is_some_and(|w| w.shake > 0);
                             let live = !self.paused && self.frozen.is_none();
                             r.set_shake(if shaking && live { 1.0 } else { 0.0 });
-                            r.set_camera(if self.video.shockwaves {
-                                self.slowmo.camera()
-                            } else {
-                                Camera::default()
+                            let world = self.frozen.as_ref().or(self.world.as_ref());
+                            r.set_camera(match world.filter(|_| self.video.shockwaves) {
+                                Some(w) => self.slowmo.camera(w),
+                                None => Camera::default(),
                             });
                         }
                     }
@@ -637,6 +636,7 @@ impl ApplicationHandler for App {
                             &self.sparks,
                             &self.players,
                             self.paused,
+                            self.slowmo.highlight().filter(|_| self.video.shockwaves),
                         ),
                         (Screen::PlayerSetup(s), _) => {
                             s.draw(r, a, &self.config, time);

@@ -51,7 +51,9 @@ cargo fmt
   antes de la iluminación para que la luz lo alumbre (las ascuas brillan solas, después); va con "Particles".
   `steps.rs`: polvo al frenar o girar y escarcha al patinar en hielo (compara posiciones entre ticks).
   `slowmo.rs`: cámara lenta en la muerte que decide la ronda; solo escala el tiempo que recibe el
-  acumulador (los ticks son los mismos, determinista) y acerca la cámara. Si la ronda acaba en plena
+  acumulador (los ticks son los mismos, determinista). Encuadra a la víctima, la bomba (la explosión
+  que la alcanzó) y al asesino (a quien `kill_bombers` sumó la muerte), con focos de luz
+  (`Camera::spots`) y su nombre encima. Si la ronda acaba en plena
   cámara lenta se congela el último fotograma hasta que termina. Va con la opción "Cinematic Effects".
   `assets.rs` carga texturas y fuentes; `draw.rs` dibuja mapa, HUD y marcador; `sparks.rs` compara el
   mundo con el fotograma anterior y lanza ráfagas de partículas (explosiones, cajas, muertes, mechas);

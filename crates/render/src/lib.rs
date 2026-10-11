@@ -13,7 +13,7 @@ use wgpu::util::DeviceExt;
 use winit::window::Window;
 
 pub use fire::Fire;
-pub use fx::{Burst, Camera, Effects, ParticleKind};
+pub use fx::{Burst, Camera, Effects, ParticleKind, MAX_SPOTS};
 pub use light::{Light, Lighting};
 pub use text::{Align, Font, FontError};
 

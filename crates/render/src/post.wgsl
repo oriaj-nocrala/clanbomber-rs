@@ -16,6 +16,8 @@ struct Post {
     heat: f32,
     _pad1: f32,
     _pad2: f32,
+    // Focos de la cámara lenta: centro (px virtuales), radio y fuerza (0 = ninguno).
+    spot: array<vec4<f32>, 3>,
     // Por onda: centro (px virtuales), progreso 0..1 y fuerza.
     wave: array<vec4<f32>, 16>,
 };
@@ -145,11 +147,25 @@ fn fs(in: VsOut) -> @location(0) vec4<f32> {
     }
     color *= 1.0 + wave.z;
     if post.drama > 0.0 {
-        // Cámara lenta: menos color y bordes oscuros.
-        let lum = dot(color, vec3<f32>(0.2126, 0.7152, 0.0722));
-        color = mix(color, vec3<f32>(lum), 0.5 * post.drama);
+        // Cámara lenta: penumbra sin color salvo en los focos (quien cae, la bomba, quien la
+        // puso); sin focos, una viñeta en los bordes.
+        let p = suv * vec2<f32>(800.0, 600.0);
+        var lit = 0.0;
+        var any_spot = 0.0;
+        for (var i = 0u; i < 3u; i++) {
+            let s = post.spot[i];
+            if s.w > 0.0 {
+                any_spot = 1.0;
+                let d = length(p - s.xy);
+                lit = max(lit, s.w * (1.0 - smoothstep(s.z, s.z * 2.2, d)));
+            }
+        }
         let v = uv * (1.0 - uv);
-        color *= mix(1.0, pow(16.0 * v.x * v.y, 0.35), post.drama);
+        let vignette = pow(16.0 * v.x * v.y, 0.35);
+        let light = mix(vignette, mix(0.42, 1.0, lit), any_spot);
+        let lum = dot(color, vec3<f32>(0.2126, 0.7152, 0.0722));
+        color = mix(color, vec3<f32>(lum), 0.6 * post.drama * (1.0 - lit));
+        color *= mix(1.0, light, post.drama);
     }
     if post.crt > 0.0 {
         // Líneas de barrido a la resolución del original (600 líneas) y viñeta.

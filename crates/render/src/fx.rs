@@ -47,6 +47,9 @@ impl Default for Effects {
     }
 }
 
+/// Focos de luz de la cámara lenta (tamaño del array en `post.wgsl`).
+pub const MAX_SPOTS: usize = 3;
+
 /// Cámara de la composición final (cámara lenta).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Camera {
@@ -54,8 +57,11 @@ pub struct Camera {
     pub zoom: f32,
     /// Punto que queda quieto al hacer zoom (px virtuales).
     pub focus: [f32; 2],
-    /// 0..1: desaturación y viñeta.
+    /// 0..1: desaturación y penumbra.
     pub drama: f32,
+    /// Focos que se libran de la penumbra: centro (px virtuales), radio y fuerza (0 = ninguno).
+    /// Sin focos, la penumbra es una viñeta en los bordes.
+    pub spots: [[f32; 4]; MAX_SPOTS],
 }
 
 impl Default for Camera {
@@ -64,6 +70,7 @@ impl Default for Camera {
             zoom: 1.0,
             focus: [400.0, 300.0],
             drama: 0.0,
+            spots: [[0.0; 4]; MAX_SPOTS],
         }
     }
 }
@@ -362,6 +369,8 @@ struct PostParams {
     /// 1 si hay alguna fuente de calor (si no, la composición no mira la máscara).
     heat: f32,
     _pad: [f32; 2],
+    /// Focos de la cámara lenta: centro, radio y fuerza.
+    spot: [[f32; 4]; MAX_SPOTS],
     /// Por onda: centro (px virtuales), progreso 0..1 y fuerza.
     wave: [[f32; 4]; MAX_WAVES],
 }
@@ -705,6 +714,13 @@ impl Post {
                 drama: camera.drama.clamp(0.0, 1.0),
                 heat: if heat { 1.0 } else { 0.0 },
                 _pad: [0.0; 2],
+                spot: camera.spots.map(|s| {
+                    if s.iter().all(|v| v.is_finite()) {
+                        s
+                    } else {
+                        [0.0; 4]
+                    }
+                }),
                 wave,
             }),
         );
