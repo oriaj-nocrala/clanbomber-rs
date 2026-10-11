@@ -3,6 +3,8 @@
 
 use wgpu::util::DeviceExt;
 
+use crate::heat::{HEAT_FORMAT, HEAT_SIZE};
+
 /// Formato de la escena intermedia: flotante, para que lo que brilla pueda pasar de 1.0 y
 /// alimentar el bloom.
 pub(crate) const SCENE_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
@@ -23,7 +25,7 @@ pub struct Effects {
     pub particles: bool,
     /// Explosiones procedurales en vez de los sprites.
     pub fire: bool,
-    /// Ondas expansivas que deforman la imagen.
+    /// Ondas expansivas y calor que deforman la imagen.
     pub shockwaves: bool,
     /// Estelas a mucha velocidad, brillo del hielo y tinte de enfermedad.
     pub sprite_fx: bool,
@@ -357,7 +359,9 @@ struct PostParams {
     zoom: f32,
     focus: [f32; 2],
     drama: f32,
-    _pad: [f32; 3],
+    /// 1 si hay alguna fuente de calor (si no, la composición no mira la máscara).
+    heat: f32,
+    _pad: [f32; 2],
     /// Por onda: centro (px virtuales), progreso 0..1 y fuerza.
     wave: [[f32; 4]; MAX_WAVES],
 }
@@ -398,6 +402,8 @@ struct Bloom {
 pub(crate) struct Post {
     pub scene: wgpu::TextureView,
     pub scene_size: (u32, u32),
+    /// Máscara de calor (`heat.rs`).
+    pub heat: wgpu::TextureView,
     bloom_a: wgpu::TextureView,
     bloom_b: wgpu::TextureView,
     linear: wgpu::Sampler,
@@ -470,12 +476,29 @@ impl Post {
         let bloom_shader =
             compute.then(|| device.create_shader_module(wgpu::include_wgsl!("bloom.wgsl")));
         let scene = texture(device, "escena", scene_size, Self::SCENE_USAGE);
+        let heat = device
+            .create_texture(&wgpu::TextureDescriptor {
+                label: Some("máscara de calor"),
+                size: wgpu::Extent3d {
+                    width: HEAT_SIZE.0,
+                    height: HEAT_SIZE.1,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: HEAT_FORMAT,
+                usage: Self::SCENE_USAGE,
+                view_formats: &[],
+            })
+            .create_view(&Default::default());
         let group = Self::group(
-            device, &pipeline, &scene, &bloom_a, &nearest, &linear, &params,
+            device, &pipeline, &scene, &bloom_a, &heat, &nearest, &linear, &params,
         );
         let mut post = Post {
             scene,
             scene_size,
+            heat,
             bloom_a,
             bloom_b,
             linear,
@@ -494,11 +517,13 @@ impl Post {
     const SCENE_USAGE: wgpu::TextureUsages =
         wgpu::TextureUsages::RENDER_ATTACHMENT.union(wgpu::TextureUsages::TEXTURE_BINDING);
 
+    #[allow(clippy::too_many_arguments)]
     fn group(
         device: &wgpu::Device,
         pipeline: &wgpu::RenderPipeline,
         scene: &wgpu::TextureView,
         bloom: &wgpu::TextureView,
+        heat: &wgpu::TextureView,
         nearest: &wgpu::Sampler,
         linear: &wgpu::Sampler,
         params: &wgpu::Buffer,
@@ -526,6 +551,10 @@ impl Post {
                 wgpu::BindGroupEntry {
                     binding: 4,
                     resource: params.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 5,
+                    resource: wgpu::BindingResource::TextureView(heat),
                 },
             ],
         })
@@ -608,6 +637,7 @@ impl Post {
             &self.pipeline,
             &self.scene,
             &self.bloom_a,
+            &self.heat,
             &self.nearest,
             &self.linear,
             &self.params,
@@ -641,6 +671,7 @@ impl Post {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn set_params(
         &self,
         queue: &wgpu::Queue,
@@ -648,6 +679,7 @@ impl Post {
         shake: f32,
         time: f32,
         waves: &[[f32; 4]],
+        heat: bool,
         camera: Camera,
     ) {
         let mut wave = [[0.0; 4]; MAX_WAVES];
@@ -671,7 +703,8 @@ impl Post {
                 zoom: camera.zoom.max(1.0),
                 focus: camera.focus,
                 drama: camera.drama.clamp(0.0, 1.0),
-                _pad: [0.0; 3],
+                heat: if heat { 1.0 } else { 0.0 },
+                _pad: [0.0; 2],
                 wave,
             }),
         );
@@ -720,6 +753,7 @@ mod tests {
             ("particles.wgsl", include_str!("particles.wgsl")),
             ("bloom.wgsl", include_str!("bloom.wgsl")),
             ("post.wgsl", include_str!("post.wgsl")),
+            ("heat.wgsl", include_str!("heat.wgsl")),
             ("fire.wgsl", include_str!("fire.wgsl")),
             ("light.wgsl", include_str!("light.wgsl")),
         ] {

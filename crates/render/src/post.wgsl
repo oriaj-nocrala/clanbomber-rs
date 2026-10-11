@@ -1,5 +1,5 @@
-// Composición final: escena + bloom, con filtro CRT opcional y aberración cromática mientras
-// tiembla la pantalla. Un triángulo que cubre el viewport (el letterbox lo pone el viewport).
+// Composición final: escena + bloom, con filtro CRT opcional, aberración cromática mientras
+// tiembla la pantalla, ondas expansivas y aire caliente. Un triángulo que cubre el viewport (el letterbox lo pone el viewport).
 
 struct Post {
     bloom: f32,
@@ -12,7 +12,8 @@ struct Post {
     focus: vec2<f32>,
     // Cámara lenta: 0..1 de desaturación y viñeta.
     drama: f32,
-    _pad0: f32,
+    // 1 si la máscara de calor tiene algo este fotograma.
+    heat: f32,
     _pad1: f32,
     _pad2: f32,
     // Por onda: centro (px virtuales), progreso 0..1 y fuerza.
@@ -24,6 +25,8 @@ struct Post {
 @group(0) @binding(2) var nearest: sampler;
 @group(0) @binding(3) var linear: sampler;
 @group(0) @binding(4) var<uniform> post: Post;
+// Máscara de calor a media resolución virtual (`heat.wgsl`).
+@group(0) @binding(5) var heat_tex: texture_2d<f32>;
 
 struct VsOut {
     @builtin(position) pos: vec4<f32>,
@@ -75,6 +78,37 @@ fn shockwaves(uv: vec2<f32>) -> vec3<f32> {
     return vec3<f32>(offset / virt, glow);
 }
 
+fn hash21(p: vec2<i32>) -> f32 {
+    let q = vec2<u32>(p + 32768);
+    var h = q.x * 374761393u + q.y * 668265263u;
+    h = (h ^ (h >> 13u)) * 1274126177u;
+    return f32(h ^ (h >> 16u)) / 4294967295.0;
+}
+
+// Ruido de valor con interpolación quíntica (sin aristas en el desplazamiento).
+fn vnoise(p: vec2<f32>) -> f32 {
+    let i = vec2<i32>(floor(p));
+    let f = fract(p);
+    let u = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
+    let a = hash21(i);
+    let b = hash21(i + vec2<i32>(1, 0));
+    let c = hash21(i + vec2<i32>(0, 1));
+    let d = hash21(i + vec2<i32>(1, 1));
+    return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
+}
+
+// Aire caliente en `p` (px virtuales): desplazamiento (xy, en unidades de ±0.5) y un valor para
+// el rielado del brillo (z). Bandas alargadas en horizontal que suben, deformadas por un
+// torbellino lento para que no se vean como un dibujo que se desliza.
+fn haze(p: vec2<f32>, t: f32) -> vec3<f32> {
+    let swirl = vnoise(vec2<f32>(p.x / 34.0, p.y / 22.0 + t * 0.6)) * 2.2;
+    let q1 = vec2<f32>(p.x / 15.0 + swirl, p.y / 6.0 + t * 2.3);
+    let q2 = vec2<f32>(p.x / 6.5, p.y / 2.8 + t * 4.4 + swirl);
+    let a = vnoise(q1) * 0.7 + vnoise(q2) * 0.3;
+    let b = vnoise(q1 + vec2<f32>(7.3, 3.1)) * 0.7 + vnoise(q2 + vec2<f32>(11.9, 5.7)) * 0.3;
+    return vec3<f32>(a - 0.5, (b - 0.5) * 0.45, a);
+}
+
 @fragment
 fn fs(in: VsOut) -> @location(0) vec4<f32> {
     var uv = in.uv;
@@ -91,6 +125,24 @@ fn fs(in: VsOut) -> @location(0) vec4<f32> {
     let wave = shockwaves(suv);
     suv -= wave.xy;
     var color = sample_scene(suv) + textureSample(bloom_tex, linear, suv).rgb * post.bloom;
+    let heat = textureSampleLevel(heat_tex, linear, suv, 0.0).r * post.heat;
+    if heat > 0.003 {
+        // Refracción: la imagen se mueve unos píxeles con el aire. Sin filtrar, para que el
+        // pixel art se ondule nítido en vez de emborronarse. Cada canal se dobla un poco distinto
+        // (el rojo más que el azul): donde más tiembla queda un filo de arcoíris.
+        let virt = vec2<f32>(800.0, 600.0);
+        let k = min(heat, 1.6);
+        let hz = haze(suv * virt, post.time % 600.0);
+        let o = hz.xy * 6.0 * k / virt;
+        let hot = vec3<f32>(
+            textureSampleLevel(scene, nearest, suv + o * 1.12, 0.0).r,
+            textureSampleLevel(scene, nearest, suv + o, 0.0).g,
+            textureSampleLevel(scene, nearest, suv + o * 0.88, 0.0).b,
+        ) + textureSampleLevel(bloom_tex, linear, suv + o, 0.0).rgb * post.bloom;
+        // La luz que atraviesa el aire caliente riela.
+        let shimmer = 1.0 + (hz.z - 0.5) * 0.14 * k;
+        color = mix(color, hot * shimmer, smoothstep(0.003, 0.12, heat));
+    }
     color *= 1.0 + wave.z;
     if post.drama > 0.0 {
         // Cámara lenta: menos color y bordes oscuros.

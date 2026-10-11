@@ -8,7 +8,7 @@ use cb_core::{
 use cb_render::{Align, Fire, Renderer, Sheet};
 
 use crate::assets::Assets;
-use crate::shards::Shards;
+use crate::sparks::Sparks;
 
 /// `offset_x` de dibujo de todos los bombers (`Bomber::Bomber`); el `offset_y` depende del aspecto.
 const BOMBER_OFFSET_X: f32 = 60.0;
@@ -206,12 +206,12 @@ pub fn draw(
     a: &Assets,
     w: &World,
     ui: &Ui,
-    shards: &Shards,
+    fx: &Sparks,
     players: &[Player],
     paused: bool,
 ) {
     match w.phase {
-        Phase::Playing => draw_game(r, a, w, ui, shards, players),
+        Phase::Playing => draw_game(r, a, w, ui, fx, players),
         Phase::Scores {
             winner,
             end_of_game,
@@ -257,14 +257,7 @@ fn tile_cells(map: &Map, x: i32, y: i32) -> Option<(u32, Option<u32>)> {
     })
 }
 
-fn draw_game(
-    r: &mut Renderer,
-    a: &Assets,
-    w: &World,
-    ui: &Ui,
-    shards: &Shards,
-    players: &[Player],
-) {
+fn draw_game(r: &mut Renderer, a: &Assets, w: &World, ui: &Ui, fx: &Sparks, players: &[Player]) {
     let sprite_fx = r.effects().sprite_fx;
     // Tema visual (0..6): cada tema ocupa 4 celdas en maptiles.png.
     let theme = w.config.theme.clamp(0, 5) as u32;
@@ -595,12 +588,13 @@ fn draw_game(
     }
 
     // Trozos de cajas y extras, en el aire sobre todo lo demás.
-    shards.draw_shards(r, a);
+    fx.shards.draw_shards(r, a);
+    fx.haze.apply(r, w);
     // Luz dinámica sobre todo lo anterior; las partículas, que ya brillan, van encima.
     crate::lighting::apply(r, w, players);
     // Partículas (chispas, cascotes, humo) sobre el mapa y bajo el reloj del observador.
     r.particle_layer();
-    shards.draw_pops(r, a);
+    fx.shards.draw_pops(r, a);
     draw_observer(r, a, w);
 }
 

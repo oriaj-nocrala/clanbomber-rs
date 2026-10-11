@@ -6,6 +6,7 @@ use cb_core::{ExtraKind, Phase, World, TILE_PIXELS};
 use cb_render::{Burst, ParticleKind, Renderer};
 
 use crate::assets::Assets;
+use crate::haze::Haze;
 use crate::shards::{Shards, Source};
 
 use crate::draw::{skin_color, speed_level, srgb_rgba, Player};
@@ -38,6 +39,8 @@ pub struct Sparks {
     extras: Vec<(ExtraKind, i32, i32, bool)>,
     /// Trozos con textura y extras recogidos (se dibujan en `draw`).
     pub shards: Shards,
+    /// Aire caliente sobre el fuego y las mechas.
+    pub haze: Haze,
 }
 
 fn tile_center(tx: i32, ty: i32) -> [f32; 2] {
@@ -57,6 +60,7 @@ impl Sparks {
     /// juego transcurridos (0 en pausa: no sale nada nuevo).
     pub fn update(&mut self, r: &mut Renderer, a: &Assets, w: &World, players: &[Player], dt: f32) {
         self.shards.update(dt);
+        self.haze.update(w, dt);
         if !matches!(w.phase, Phase::Playing) {
             self.tracking = false;
             self.shards.clear();

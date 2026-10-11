@@ -4,6 +4,7 @@
 
 mod fire;
 mod fx;
+mod heat;
 mod light;
 mod text;
 
@@ -91,6 +92,7 @@ pub struct Renderer {
     batches: Vec<Batch>,
     fire: fire::FirePipeline,
     light: light::LightPipeline,
+    heat: heat::HeatPipeline,
     fires: Vec<fire::FireInstance>,
     vbuf: wgpu::Buffer,
     ibuf: wgpu::Buffer,
@@ -252,6 +254,7 @@ impl Renderer {
         let particles = compute.then(|| fx::Particles::new(&device, &globals));
         let fire = fire::FirePipeline::new(&device, &globals, fx::SCENE_FORMAT);
         let light = light::LightPipeline::new(&device, &globals, fx::SCENE_FORMAT);
+        let heat = heat::HeatPipeline::new(&device);
         let mut r = Renderer {
             surface,
             device,
@@ -265,6 +268,7 @@ impl Renderer {
             batches: Vec::new(),
             fire,
             light,
+            heat,
             fires: Vec::new(),
             vbuf,
             ibuf,
@@ -539,6 +543,23 @@ impl Renderer {
         }
     }
 
+    /// Aire caliente que tiembla sobre `rect` (px virtuales), con `soft` px de borde difuminado.
+    /// `intensity` 1 es el calor de una llama; las fuentes que se solapan se suman. Solo cuenta
+    /// para el fotograma actual.
+    pub fn heat(&mut self, rect: [f32; 4], soft: f32, intensity: f32) {
+        let valid = rect.iter().all(|v| v.is_finite()) && intensity.is_finite() && soft.is_finite();
+        if self.effects.shockwaves
+            && valid
+            && intensity > 0.0
+            && self.heat.sources.len() < heat::MAX_HEAT
+        {
+            self.heat.sources.push(heat::HeatInstance {
+                rect,
+                params: [intensity, soft.max(0.0)],
+            });
+        }
+    }
+
     /// Celda `index` de una hoja de sprites, en (x, y) a tamaño nativo.
     pub fn sheet_sprite(&mut self, sheet: &Sheet, index: u32, x: f32, y: f32) {
         self.sprite(
@@ -667,12 +688,14 @@ impl Renderer {
         if self.effects.bloom {
             self.post.bloom(&mut enc);
         }
+        self.heat.draw(&self.queue, &mut enc, &self.post.heat);
         self.post.set_params(
             &self.queue,
             self.effects,
             self.shake,
             time,
             &self.waves,
+            !self.heat.sources.is_empty(),
             self.camera,
         );
         let (viewport, _) = letterbox(self.config.width, self.config.height);
@@ -692,6 +715,7 @@ impl Renderer {
         self.batches.clear();
         self.fires.clear();
         self.waves.clear();
+        self.heat.sources.clear();
         self.light.lights.clear();
         self.particle_layer = None;
     }
