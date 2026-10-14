@@ -20,7 +20,7 @@ Up to 8 players, AI opponents, gamepads, 33 maps, power-ups, diseases, ice, trap
 [![Stars](https://img.shields.io/github/stars/oriaj-nocrala/clanbomber-rs?style=flat-square&logo=github&logoColor=white)](https://github.com/oriaj-nocrala/clanbomber-rs/stargazers)
 [![PRs welcome](https://img.shields.io/badge/PRs-welcome-FF5A5F?style=flat-square)](https://github.com/oriaj-nocrala/clanbomber-rs/pulls)
 
-<img src="docs/img/gameplay.gif?v=0.2.0" alt="Four AIs playing a round on FireWheels" width="640">
+<img src="docs/img/gameplay.gif?v=0.3.0" alt="Four AIs playing a round on FireWheels" width="640">
 
 <sub>Four AIs on <i>FireWheels</i>, with arrows pushing bombs around. Recorded by the game itself (<code>--screenshots</code>).</sub>
 
@@ -42,32 +42,32 @@ Linux.
 
 <table>
 <tr>
-<td width="50%"><img src="docs/img/menu.png?v=0.2.0" alt="Main menu"></td>
-<td width="50%"><img src="docs/img/gameplay-ice.png?v=0.2.0" alt="Ice-themed match"></td>
+<td width="50%"><img src="docs/img/menu.png?v=0.3.0" alt="Main menu"></td>
+<td width="50%"><img src="docs/img/gameplay-ice.png?v=0.3.0" alt="Ice-themed match"></td>
 </tr>
 <tr>
-<td align="center"><sub>Main menu, on the original title screen</sub></td>
+<td align="center"><sub>3D main menu: each box is an option and your bomber is the cursor</sub></td>
 <td align="center"><sub>Ice arena: AIs, bombs, power-ups and cross-shaped fire</sub></td>
 </tr>
 <tr>
-<td width="50%"><img src="docs/img/gameplay-jungle.png?v=0.2.0" alt="Jungle-themed match"></td>
-<td width="50%"><img src="docs/img/team-scoreboard.png?v=0.2.0" alt="Team scoreboard"></td>
+<td width="50%"><img src="docs/img/gameplay-jungle.png?v=0.3.0" alt="Jungle-themed match"></td>
+<td width="50%"><img src="docs/img/team-scoreboard.png?v=0.3.0" alt="Team scoreboard"></td>
 </tr>
 <tr>
 <td align="center"><sub>6 graphic themes — this one is “Jungle Arena”</sub></td>
 <td align="center"><sub>Team scoreboard between rounds</sub></td>
 </tr>
 <tr>
-<td width="50%"><img src="docs/img/player-setup.png?v=0.2.0" alt="Player setup"></td>
-<td width="50%"><img src="docs/img/map-select.png?v=0.2.0" alt="Map selection"></td>
+<td width="50%"><img src="docs/img/player-setup.png?v=0.3.0" alt="Player setup"></td>
+<td width="50%"><img src="docs/img/map-select.png?v=0.3.0" alt="Map selection"></td>
 </tr>
 <tr>
-<td align="center"><sub>8 seats: skin, name, team and controller</sub></td>
+<td align="center"><sub>Player setup on a wooden sign: skin, name, team and controller</sub></td>
 <td align="center"><sub>Map selection with live preview</sub></td>
 </tr>
 <tr>
-<td width="50%"><img src="docs/img/map-editor.png?v=0.2.0" alt="Map editor"></td>
-<td width="50%"><img src="docs/img/scoreboard.png?v=0.2.0" alt="Scoreboard with trophies"></td>
+<td width="50%"><img src="docs/img/map-editor.png?v=0.3.0" alt="Map editor"></td>
+<td width="50%"><img src="docs/img/scoreboard.png?v=0.3.0" alt="Scoreboard with trophies"></td>
 </tr>
 <tr>
 <td align="center"><sub>Built-in map editor</sub></td>
@@ -78,7 +78,7 @@ Linux.
 ## 🌋 1999 game, 2026 graphics
 
 <div align="center">
-<img src="docs/img/slow-motion.gif?v=0.2.0" alt="Slow motion on the death that decides the round" width="480">
+<img src="docs/img/slow-motion.gif?v=0.3.0" alt="Slow motion on the death that decides the round" width="480">
 
 <sub>The death that decides the round, in slow motion: the camera frames the victim, the bomb and the killer.</sub>
 </div>
@@ -100,6 +100,9 @@ everything off (or on old GL without compute shaders) it looks like the original
 - **Slow motion** on the round-deciding death, with spotlights on who died, the bomb and who placed it.
 - **Antique stopwatch** in the HUD and **crisp text** at any resolution (signed distance fields).
 - **Interpolated rendering** for monitors above 60 Hz; the simulation stays at a fixed 60 Hz and deterministic.
+- **3D menu**: the main menu is a tiny level in perspective, lit by torches. Your bomber walks between the boxes,
+  bombs the one you pick and the camera dives in; submenus, player setup, map selection and help are wooden signs
+  that flip in like cards.
 
 ## 🎮 Features
 
@@ -258,6 +261,9 @@ en GL antiguo, sin compute shaders) se ve como el original.
 - **Cámara lenta** en la muerte que decide la ronda, con focos sobre quien murió, la bomba y quien la puso.
 - **Cronómetro antiguo** en el HUD y **texto nítido** a cualquier resolución (campos de distancia).
 - **Dibujo interpolado** para monitores de más de 60 Hz; la simulación sigue a 60 Hz fijos y determinista.
+- **Menú 3D**: el menú principal es un nivel en miniatura en perspectiva, alumbrado por antorchas. Tu bomber camina
+  entre las cajas, pone una bomba en la elegida y la cámara se zambulle; los submenús, la configuración de jugadores,
+  la selección de mapas y la ayuda son letreros de madera que entran girando como una carta.
 
 ### 🎮 Características
 
