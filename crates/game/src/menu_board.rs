@@ -4,7 +4,8 @@
 //! sprites y texto 2D en la posición proyectada.
 
 use cb_render::{
-    faces, Align, Burst, Cube, Light3d, ParticleKind, Renderer, Shadow, TextStyle, View3d,
+    faces, Align, Burst, Cube, Light3d, ParticleKind, Renderer, Shadow, TextStyle, TextureId,
+    View3d,
 };
 
 use crate::assets::Assets;
@@ -80,6 +81,51 @@ fn hash(x: usize, z: usize) -> f32 {
 /// Parpadeo de fuego en [0.75, 1.1] con su propia fase.
 fn flicker(time: f32, seed: f32) -> f32 {
     0.92 + 0.1 * (time * 11.0 + seed * 7.0).sin() + 0.08 * (time * 23.0 + seed * 3.0).sin()
+}
+
+/// Regiones de textura de los muros, las cajas y la tierra de la isla de un tema.
+struct BlockFaces {
+    tex: TextureId,
+    wall_top: [f32; 4],
+    wall_side: [f32; 4],
+    box_top: [f32; 4],
+    box_side: [f32; 4],
+    earth: [f32; 4],
+    earth_tint: [f32; 3],
+}
+
+impl BlockFaces {
+    /// Las de `maptiles_cubes.png` si está; si no, las casillas de la partida (el lado igual que
+    /// arriba y la tierra como el muro oscurecido).
+    fn of(a: &Assets, theme: u32) -> BlockFaces {
+        match &a.cubes {
+            Some(c) => {
+                let cell = |n: u32| c.cell(theme * 5 + n);
+                BlockFaces {
+                    tex: c.tex,
+                    wall_top: cell(0),
+                    wall_side: cell(1),
+                    box_top: cell(2),
+                    box_side: cell(3),
+                    earth: cell(4),
+                    earth_tint: [0.8; 3],
+                }
+            }
+            None => {
+                let t = &a.maptiles_3d;
+                let cell = |n: u32| t.cell(theme * 4 + n);
+                BlockFaces {
+                    tex: t.tex,
+                    wall_top: cell(1),
+                    wall_side: cell(1),
+                    box_top: cell(2),
+                    box_side: cell(2),
+                    earth: cell(1),
+                    earth_tint: [0.42, 0.33, 0.27],
+                }
+            }
+        }
+    }
 }
 
 impl Board {
@@ -200,18 +246,20 @@ impl Board {
             color: [4.5 * f, 2.6 * f, 0.9 * f],
         });
 
-        let tiles = &a.maptiles_3d;
-        let cell = |n: u32| tiles.cell(theme * 4 + n);
-        let cube = |min: [f32; 3], size: [f32; 3], top, side, tint: [f32; 3], ao, faces| Cube {
-            tex: tiles.tex,
-            min,
-            size,
-            top,
-            side,
-            tint: [tint[0], tint[1], tint[2], 1.0],
-            ao,
-            faces,
-        };
+        let faces_of = BlockFaces::of(a, theme);
+        let floor = &a.maptiles_3d;
+        let cube =
+            |tex, min: [f32; 3], size: [f32; 3], top, side, tint: [f32; 3], ao, faces| Cube {
+                tex,
+                min,
+                size,
+                top,
+                side,
+                tint: [tint[0], tint[1], tint[2], 1.0],
+                ao,
+                faces,
+            };
+        let f = &faces_of;
         let edge = |x: usize, z: usize| x == 0 || z == 0 || x == W - 1 || z == D - 1;
         for z in 0..D {
             for x in 0..W {
@@ -220,30 +268,34 @@ impl Board {
                 if edge(x, z) {
                     let depth = 0.5 + 0.9 * hash(x, z);
                     r.cube(&cube(
+                        f.tex,
                         [fx, -depth, fz],
                         [1.0, depth, 1.0],
-                        cell(1),
-                        cell(1),
-                        [0.42, 0.33, 0.27],
+                        f.earth,
+                        f.earth,
+                        f.earth_tint,
                         0.85,
                         faces::SIDES,
                     ));
                     r.cube(&cube(
+                        f.tex,
                         [fx, 0.0, fz],
                         [1.0, 1.0, 1.0],
-                        cell(1),
-                        cell(1),
+                        f.wall_top,
+                        f.wall_side,
                         [1.0; 3],
                         0.4,
                         faces::ALL,
                     ));
                 } else {
                     let shade = 0.9 + 0.1 * hash(z, x);
+                    let cell = floor.cell(theme * 4);
                     r.cube(&cube(
+                        floor.tex,
                         [fx, 0.0, fz],
                         [1.0, 0.0, 1.0],
-                        cell(0),
-                        cell(0),
+                        cell,
+                        cell,
                         [shade; 3],
                         0.0,
                         faces::TOP,
@@ -256,10 +308,11 @@ impl Board {
             let x = (BOX_X0 + BOX_STEP * i) as f32;
             let lit = if i == selection { 1.25 } else { 0.8 };
             r.cube(&cube(
+                f.tex,
                 [x + inset, 0.0, BOX_ROW as f32 + inset],
                 [1.0 - 2.0 * inset, 0.86, 1.0 - 2.0 * inset],
-                cell(2),
-                cell(2),
+                f.box_top,
+                f.box_side,
                 [lit; 3],
                 0.35,
                 faces::ALL,

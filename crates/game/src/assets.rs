@@ -12,6 +12,9 @@ pub struct Assets {
     pub maptiles: Sheet,
     /// La misma hoja con mipmaps, para el tablero 3D del menú (se ve muy reducida y en ángulo).
     pub maptiles_3d: Sheet,
+    /// maptiles_cubes.png (opcional): por tema, arriba y lado del muro, arriba y lado de la caja y
+    /// la tierra bajo la isla, para los cubos del tablero 3D (`tools/sprites/cubes.py`).
+    pub cubes: Option<Sheet>,
     pub addons: Sheet,
     /// Los 8 aspectos, en el orden de `Resources::Bombers`.
     pub skins: Vec<Skin>,
@@ -84,6 +87,13 @@ impl Assets {
             r.load_texture_mipmapped(&path, 5)
                 .unwrap_or_else(|e| panic!("{}: {e}", path.display()))
         };
+        let cubes = {
+            let path = dir.join("pics/maptiles_cubes.png");
+            path.exists().then(|| {
+                r.load_texture_mipmapped(&path, 5)
+                    .unwrap_or_else(|e| panic!("{}: {e}", path.display()))
+            })
+        };
         let mut pic = |name: &str| load_pic(r, &dir, name);
         let maptiles = pic("maptiles.png");
         let addons = pic("maptile_addons.png");
@@ -136,6 +146,7 @@ impl Assets {
         Assets {
             maptiles: r.sheet_scaled(maptiles, 40.0, 40.0, SCALE),
             maptiles_3d: r.sheet_scaled(maptiles_3d, 40.0, 40.0, SCALE),
+            cubes: cubes.map(|t| r.sheet_scaled(t, 40.0, 40.0, SCALE)),
             addons: r.sheet_scaled(addons, 40.0, 40.0, SCALE),
             bombs: r.sheet_scaled(bombs, 40.0, 40.0, SCALE),
             explosion: r.sheet_scaled(explosion, 40.0, 40.0, SCALE),
