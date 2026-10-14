@@ -1,6 +1,6 @@
 # Handoff: menú principal como tablero 3D ("el menú es una partida")
 
-Estado: fases 1, 2 y 3 hechas en la rama `menu-3d` (`cb-render/board3d.rs`, `cb-game/menu_board.rs`,
+Estado: fases 1, 2 y 3 hechas y mergeadas a `main` (v0.3.0) (`cb-render/board3d.rs`, `cb-game/menu_board.rs`,
 caras de los cubos en `assets/pics/maptiles_cubes.png`). Player Setup y Map Selection
 también van en el letrero (`Card::Panel`). Maqueta:
 `docs/menu-3d-maqueta.png`.
@@ -63,8 +63,7 @@ cualquiera, no solo el tablero del menú (la simulación no cambia; el 3D es otr
 - **Muro de hielo:** su cara de arriba es nieve igual que el suelo y se distinguen poco desde
   arriba; se podría oscurecer ese muro.
 - **Sin respaldo** si fallara crear la pipeline 3D (solo usa vértice y fragmento).
-- **Mergear** la rama `menu-3d` a `main`, y regenerar `docs/img` (la captura `menu.png` y
-  `new-game.png` cambiaron) subiendo el `?v=` del README.
+- ~~Mergear~~: mergeada a `main` en la versión 0.3.0, con Help también como letrero.
 - Ideas sueltas de antes: el observador cruzando volando si uno se queda quieto; usar el renderer
   de cubos para un modo 2.5D del juego (dibujar un `Map` cualquiera).
 
