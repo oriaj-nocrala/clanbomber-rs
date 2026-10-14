@@ -47,6 +47,26 @@ uno se queda quieto en el menú, mejor aún. Y el usuario quiere que este render
 base de un posible modo 2.5D/voxel del juego algún día: diseñarlo para dibujar un `Map`
 cualquiera, no solo el tablero del menú (la simulación no cambia; el 3D es otra forma de dibujar).
 
+## Lo que falta
+
+- **Player Setup y Map Selection** siguen como pantallas propias con su fondo (`player_setup.rs`,
+  `map_select.rs`). Idea: llevarlas al tablero como letreros (`menu_sign.rs`); la lista de 33
+  mapas, como un letrero con scroll y la vista previa del mapa al lado.
+- **Letrero pintado:** `assets/pics/sign.png` es generado por código (`tools/sprites/sign.py`).
+  El usuario lo dio por bueno; si se quiere uno de ChatGPT: PNG cuadrado de 384x384 con un marco
+  de 64 texels (se dibuja en 9 partes).
+- **Probar en la ventana real:** todo se revisó con capturas offscreen; los tiempos (mecha 0,5 s,
+  estallido 0,6 s, regreso 0,65 s, giro del letrero 0,15 + 0,32 s) están elegidos a ojo.
+- **Fuego del estallido:** sale como la estrella en cruz de las explosiones, algo delgada; si se
+  quiere más "bola", se ajusta en `Board::draw_blast`.
+- **Muro de hielo:** su cara de arriba es nieve igual que el suelo y se distinguen poco desde
+  arriba; se podría oscurecer ese muro.
+- **Sin respaldo** si fallara crear la pipeline 3D (solo usa vértice y fragmento).
+- **Mergear** la rama `menu-3d` a `main`, y regenerar `docs/img` (la captura `menu.png` y
+  `new-game.png` cambiaron) subiendo el `?v=` del README.
+- Ideas sueltas de antes: el observador cruzando volando si uno se queda quieto; usar el renderer
+  de cubos para un modo 2.5D del juego (dibujar un `Map` cualquiera).
+
 ## Cómo encaja en el renderer actual (leído en el código)
 
 - `cb-render` (`crates/render/src/lib.rs`): todo es un batcher 2D de quads en lienzo virtual
