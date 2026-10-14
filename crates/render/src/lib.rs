@@ -2,6 +2,7 @@
 //! con letterboxing. La escena se dibuja en una textura flotante intermedia, con partículas
 //! simuladas por compute, y una pasada final la compone en la ventana (bloom, CRT).
 
+mod board3d;
 mod fire;
 mod fx;
 mod heat;
@@ -12,6 +13,7 @@ use std::sync::Arc;
 use wgpu::util::DeviceExt;
 use winit::window::Window;
 
+pub use board3d::{faces, Cube, Light3d, View3d, MAX_LIGHTS_3D};
 pub use fire::Fire;
 pub use fx::{Burst, Camera, Effects, ParticleKind, MAX_SPOTS};
 pub use light::{Light, Lighting};
@@ -40,6 +42,13 @@ enum Batch {
     Fire { first: u32, count: u32 },
     /// Iluminación: multiplica lo dibujado hasta aquí por la luz (`light.wgsl`).
     Light,
+    /// Cuadriláteros de la escena 3D (`board3d.wgsl`). Los lotes 3D seguidos comparten una
+    /// pasada con su depth buffer.
+    Mesh3d {
+        tex: TextureId,
+        first_quad: u32,
+        quads: u32,
+    },
 }
 
 /// Hoja de sprites con celdas de tamaño fijo, numeradas en fila. `cell_w`/`cell_h` son el
@@ -97,6 +106,8 @@ pub struct Renderer {
     textures: Vec<Texture>,
     batches: Vec<Batch>,
     fire: fire::FirePipeline,
+    board3d: board3d::Board3dPipeline,
+    scene3d: board3d::Scene3d,
     light: light::LightPipeline,
     heat: heat::HeatPipeline,
     fires: Vec<fire::FireInstance>,
@@ -264,6 +275,8 @@ impl Renderer {
         );
         let particles = compute.then(|| fx::Particles::new(&device, &globals));
         let fire = fire::FirePipeline::new(&device, &globals, fx::SCENE_FORMAT);
+        let board3d =
+            board3d::Board3dPipeline::new(&device, &tex_layout, fx::SCENE_FORMAT, post.scene_size);
         let light = light::LightPipeline::new(&device, &globals, fx::SCENE_FORMAT);
         let heat = heat::HeatPipeline::new(&device);
         let mut r = Renderer {
@@ -279,6 +292,8 @@ impl Renderer {
             textures: Vec::new(),
             batches: Vec::new(),
             fire,
+            board3d,
+            scene3d: Default::default(),
             light,
             heat,
             fires: Vec::new(),
@@ -384,6 +399,7 @@ impl Renderer {
         self.config.height = h;
         self.surface.configure(&self.device, &self.config);
         self.post.resize(&self.device, letterbox(w, h).1);
+        self.board3d.resize(&self.device, self.post.scene_size);
     }
 
     pub fn set_effects(&mut self, effects: Effects) {
@@ -771,6 +787,36 @@ impl Renderer {
         }
     }
 
+    /// Cámara y luz ambiente de la escena 3D de este fotograma (la última que se pida vale para
+    /// todos los cubos).
+    pub fn set_view3d(&mut self, view: View3d) {
+        self.scene3d.view = view;
+    }
+
+    /// Luz puntual de la escena 3D (hasta [`MAX_LIGHTS_3D`] por fotograma).
+    pub fn light3d(&mut self, light: Light3d) {
+        self.scene3d.lights.push(light);
+    }
+
+    /// Prisma con textura en la escena 3D. Los cubos se dibujan con profundidad entre sí, en el
+    /// punto del orden de dibujo en que se piden, y lo 2D posterior queda encima.
+    pub fn cube(&mut self, cube: &Cube) {
+        let first = (self.scene3d.verts.len() / 4) as u32;
+        let size = self.textures[cube.tex.0].size;
+        let quads = self.scene3d.push_cube(cube, size);
+        if quads == 0 {
+            return;
+        }
+        match self.batches.last_mut() {
+            Some(Batch::Mesh3d { tex, quads: q, .. }) if *tex == cube.tex => *q += quads,
+            _ => self.batches.push(Batch::Mesh3d {
+                tex: cube.tex,
+                first_quad: first,
+                quads,
+            }),
+        }
+    }
+
     /// Explosión procedural (en lugar de los sprites de `explosion2.png`).
     pub fn fire(&mut self, fire: &Fire) {
         if self.fires.len() >= fire::MAX_FIRES {
@@ -802,6 +848,7 @@ impl Renderer {
         self.queue
             .write_buffer(&self.vbuf, 0, bytemuck::cast_slice(&self.verts));
         self.fire.upload(&self.queue, &self.fires);
+        self.board3d.upload(&self.queue, &self.scene3d);
         let time = self.started.elapsed().as_secs_f32();
         self.queue.write_buffer(
             &self.globals,
@@ -852,14 +899,52 @@ impl Renderer {
         self.verts.clear();
         self.batches.clear();
         self.fires.clear();
+        self.scene3d.clear();
         self.waves.clear();
         self.heat.sources.clear();
         self.light.lights.clear();
         self.particle_layer = None;
     }
 
-    /// Dibuja los quads acumulados (y las partículas, en su capa) en la escena intermedia.
+    /// Dibuja los quads acumulados (y las partículas, en su capa) en la escena intermedia. Cada
+    /// tramo de lotes 3D seguidos va en su propia pasada con profundidad; lo 2D de antes y de
+    /// después, en pasadas sin ella.
     fn record_scene(&self, enc: &mut wgpu::CommandEncoder) {
+        let is_3d = |i: usize| matches!(self.batches.get(i), Some(Batch::Mesh3d { .. }));
+        let n = self.batches.len();
+        let mut start = 0;
+        loop {
+            let end = (start..n).find(|&i| is_3d(i)).unwrap_or(n);
+            self.record_2d(enc, start..end, start == 0);
+            if end == n {
+                break;
+            }
+            let mut next = end;
+            let mut meshes = Vec::new();
+            while is_3d(next) {
+                if let Batch::Mesh3d {
+                    tex,
+                    first_quad,
+                    quads,
+                } = self.batches[next]
+                {
+                    meshes.push((&self.textures[tex.0].bind_group, first_quad, quads));
+                }
+                next += 1;
+            }
+            self.board3d.draw(enc, &self.post.scene, &meshes);
+            start = next;
+        }
+    }
+
+    /// Una pasada 2D con los lotes de `range` (la primera borra la escena). Las partículas van
+    /// antes del lote de su capa, o al final si la capa cae justo después del tramo.
+    fn record_2d(
+        &self,
+        enc: &mut wgpu::CommandEncoder,
+        range: std::ops::Range<usize>,
+        clear: bool,
+    ) {
         let view = &self.post.scene;
         let mut pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: None,
@@ -868,7 +953,11 @@ impl Renderer {
                 depth_slice: None,
                 resolve_target: None,
                 ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                    load: if clear {
+                        wgpu::LoadOp::Clear(wgpu::Color::BLACK)
+                    } else {
+                        wgpu::LoadOp::Load
+                    },
                     store: wgpu::StoreOp::Store,
                 },
             })],
@@ -889,12 +978,13 @@ impl Renderer {
             pass.set_index_buffer(self.ibuf.slice(..), wgpu::IndexFormat::Uint32);
         };
         bind_quads(&mut pass);
-        for (i, b) in self.batches.iter().enumerate() {
+        let last = range.end == self.batches.len();
+        for i in range.clone() {
             if let Some((p, _)) = particles.filter(|&(_, at)| at == i) {
                 p.draw(&mut pass);
                 bind_quads(&mut pass);
             }
-            match *b {
+            match self.batches[i] {
                 Batch::Quads {
                     tex,
                     first_quad,
@@ -911,9 +1001,12 @@ impl Renderer {
                     self.light.draw(&mut pass);
                     bind_quads(&mut pass);
                 }
+                Batch::Mesh3d { .. } => {}
             }
         }
-        if let Some((p, _)) = particles.filter(|&(_, at)| at >= self.batches.len()) {
+        if let Some((p, _)) =
+            particles.filter(|&(_, at)| at == range.end || (last && at >= range.end))
+        {
             p.draw(&mut pass);
         }
     }
