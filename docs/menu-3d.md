@@ -52,7 +52,7 @@ cualquiera, no solo el tablero del menú (la simulación no cambia; el 3D es otr
 - ~~Player Setup y Map Selection~~: hechas como letreros (`menu_sign::Card::Panel`; cada
   pantalla dibuja su contenido con `menu_sign::{label, highlight, bomb_cursor}` cuando
   `Sign::front` dice que ya está de frente). Ya no usan sus fondos ni `ps_teams`/`ps_controls`
-  (los PNG siguen en `assets/pics`, sin cargarse). Pendiente: ver el giro en la ventana real.
+  (los PNG siguen en `assets/pics`, sin cargarse). Probadas en la ventana real.
 - **Letrero pintado:** `assets/pics/sign.png` es generado por código (`tools/sprites/sign.py`).
   El usuario lo dio por bueno; si se quiere uno de ChatGPT: PNG cuadrado de 384x384 con un marco
   de 64 texels (se dibuja en 9 partes).
