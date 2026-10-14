@@ -254,7 +254,10 @@ impl App {
                 c.advance(4.0);
                 self.screen = Screen::Credits(c);
             }
-            "help" => self.screen = Screen::Help(Help::new()),
+            "help" => {
+                self.screen = Screen::Help(Help::new());
+                self.sign.settle(self.sign_card());
+            }
             "gameplay-gif" => {
                 let cfg = config_with(&[(0, AI, 0), (1, AI, 0), (2, AI, 0), (3, AI, 0)], 0);
                 self.launch(cfg, SEED + 5, Some("FireWheels"));

@@ -286,6 +286,12 @@ impl App {
         match &self.screen {
             Screen::PlayerSetup(_) => Some(panel(Id::PlayerSetup, player_setup::PANEL)),
             Screen::MapSelect(_) => Some(panel(Id::MapSelection, map_select::PANEL)),
+            // Cada página de la ayuda es un letrero aparte (un nivel más hondo), así gira al pasar.
+            Screen::Help(h) => Some(Card::Panel {
+                id: Id::Help,
+                depth: 1 + h.page(),
+                size: help::PANEL,
+            }),
             _ => (!self.menu.at_root()).then(|| Card::Page(self.menu.page())),
         }
     }
@@ -655,9 +661,13 @@ impl ApplicationHandler for App {
                             self.screen = Screen::Menu;
                         }
                     }
-                    Screen::Menu | Screen::PlayerSetup(_) | Screen::MapSelect(_) => {
+                    Screen::Menu
+                    | Screen::PlayerSetup(_)
+                    | Screen::MapSelect(_)
+                    | Screen::Help(_) => {
                         self.acc = 0.0;
-                        let at_root = self.menu.at_root();
+                        // La ayuda cuelga de la raíz pero tapa el tablero: la caja sigue abierta.
+                        let at_root = self.menu.at_root() && matches!(self.screen, Screen::Menu);
                         let choice = self.menu.root_choice();
                         let event = self
                             .gfx
@@ -715,10 +725,6 @@ impl ApplicationHandler for App {
                             s.draw(r, a);
                             r.render();
                         }
-                        (Screen::Help(s), _) => {
-                            s.draw(r, a);
-                            r.render();
-                        }
                         _ => {
                             // El tablero siempre; en un submenú, su letrero encima.
                             let skin = self.config.bombers.first().map_or(0, |b| b.skin as usize);
@@ -733,7 +739,8 @@ impl ApplicationHandler for App {
                                     fire_shader: self.video.fire,
                                     shockwaves: self.video.shockwaves,
                                     shake: self.config.shaky_explosions,
-                                    labels: self.menu.at_root(),
+                                    labels: self.menu.at_root()
+                                        && matches!(self.screen, Screen::Menu),
                                 },
                             );
                             self.sign.draw(r, a, time, skin);
@@ -746,6 +753,7 @@ impl ApplicationHandler for App {
                                     Screen::MapSelect(s) => {
                                         s.draw(r, a, &self.config, &front, time)
                                     }
+                                    Screen::Help(s) => s.draw(r, a, &front),
                                     _ => {}
                                 }
                             }
