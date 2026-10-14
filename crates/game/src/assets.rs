@@ -96,6 +96,7 @@ impl Assets {
         // Los fondos HD pueden tener cualquier tamaño 4:3 (`Renderer::fullscreen`).
         let title_hd = load_hd(r, &dir, "clanbomber_title_andi.png");
         let cb_logo_hd = load_hd(r, &dir, "cb_logo_small.png");
+        let not_available_hd = load_hd(r, &dir, "not_available.png");
         let [status_hd, player_setup_hd, map_select_hd, credits_hd, editor_hd] = [
             "game_status.png",
             "playersetup.png",
@@ -128,7 +129,7 @@ impl Assets {
         let credits_bg = credits_hd.unwrap_or_else(|| tex("horst_evil.png"));
         let editor_bg = editor_hd.unwrap_or_else(|| tex("map_editor.png"));
         let (not_available, cb_logo, fl_logo) = (
-            tex("not_available.png"),
+            not_available_hd.unwrap_or_else(|| tex("not_available.png")),
             cb_logo_hd.unwrap_or_else(|| tex("cb_logo_small.png")),
             tex("fischlustig_logo.png"),
         );

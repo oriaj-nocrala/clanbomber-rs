@@ -41,6 +41,8 @@ originales). Necesitan Python con Pillow, numpy y scipy.
   marcador, con transparencia según el brillo.
 - `explosion.py <salida.png> [prev.png]`: `explosion2_hd.png` generado por código (no es IA):
   bandas de fuego con ruido periódico por celda, para que las piezas empalmen.
+- `not_available.py <ia.png> <salida.png>`: la X de "mapa no disponible", desde una X roja
+  sobre negro (transparencia según el brillo).
 - `compress.py <png>...`: 256 colores con libimagequant (~64 % menos, no se nota).
 - `qwen_title.py` / `qwen_edit.py`: mandan trabajos a ComfyUI con Qwen-Image 2.1
   (`~/ai/comfyui-workspace`; lanzar ComfyUI con `--use-split-cross-attention`).
