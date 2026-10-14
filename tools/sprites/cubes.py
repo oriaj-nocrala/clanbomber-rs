@@ -7,10 +7,11 @@ Uso:
   cubes.py ref <maptiles.png> <referencia.png>
       Grilla de 3 columnas x 6 filas sobre magenta con muro, caja y suelo de cada tema tal como
       se ven en la partida, para pasarle a ChatGPT.
-  cubes.py build <ia.png> <salida.png> [<prueba.png>]
+  cubes.py build <ia.png> <salida.png> [<prueba.png>] [--fix]
       Corta la grilla de 5 columnas x 6 filas que devuelva ChatGPT (separada por franjas
       magenta, como en maptiles.py) y arma la hoja. Con <prueba.png>, cada tema como un cubo de
-      muro y uno de caja en falsa perspectiva sobre la tierra, para mirarlos sin abrir el juego."""
+      muro y uno de caja en falsa perspectiva sobre la tierra, para mirarlos sin abrir el juego.
+      --fix aplica `FIX` (los arreglos de la generación usada)."""
 import sys
 
 import numpy as np
@@ -48,21 +49,68 @@ def runs(inside):
     return [rn for rn in out if rn[1] - rn[0] > 40]
 
 
-def build(ai_path, out_path, test_path=None):
+# ChatGPT dibujó varias caras como objetos en perspectiva (la bola de nieve, el barril y el balde,
+# el "hexágono" de oro) o apoyados en el suelo. Por celda (fila, columna): ("crop", recorte en
+# fracciones de la celda, bisel) toma solo la parte plana del material y, con bisel, le dibuja un
+# borde para que se lea el canto del cubo; ("copy", fila, columna) usa otra celda.
+FIX = {
+    (0, 1): ("crop", (0.0, 0.0, 1.0, 0.84), False),  # lado del muro de hielo, sin la nieve del suelo
+    (0, 2): ("crop", (0.22, 0.14, 0.78, 0.86), True),  # dentro de la bola de nieve
+    (0, 3): ("crop", (0.0, 0.0, 1.0, 0.87), False),  # cajón con nieve, sin la del suelo
+    (1, 0): ("copy", 1, 1),  # roca entre hojas → la pared de piedras con hojas
+    (3, 2): ("crop", (0.2, 0.12, 0.78, 0.5), True),  # tapa del barril
+    (3, 3): ("crop", (0.22, 0.32, 0.78, 0.92), True),  # cuerpo del balde
+    (5, 2): ("crop", (0.25, 0.12, 0.75, 0.55), True),  # cara de arriba del lingote
+    (5, 3): ("crop", (0.03, 0.1, 0.97, 0.99), False),  # caja dorada sin el canto de arriba
+}
+
+
+def bevel(img, width=6, strength=0.35):
+    """Aclara los bordes de arriba e izquierda y oscurece los de abajo y derecha."""
+    t = np.array(img).astype(np.float32)
+    n = t.shape[0]
+    d = np.arange(n, dtype=np.float32)
+    ramp = np.clip(1 - d / width, 0, 1)
+    light = np.maximum.outer(ramp, np.zeros(n)) + np.maximum.outer(np.zeros(n), ramp)
+    dark = np.maximum.outer(ramp[::-1], np.zeros(n)) + np.maximum.outer(np.zeros(n), ramp[::-1])
+    k = 1 + strength * np.clip(light, 0, 1) - strength * 1.3 * np.clip(dark, 0, 1)
+    return Image.fromarray(np.clip(t * k[..., None], 0, 255).round().astype(np.uint8))
+
+
+def build(ai_path, out_path, *rest):
+    fix = "--fix" in rest
+    rest = [x for x in rest if x != "--fix"]
+    test_path = rest[0] if rest else None
     a = np.array(Image.open(ai_path).convert("RGB")).astype(np.int32)
     r, g, b = a[..., 0], a[..., 1], a[..., 2]
     magenta = (r > 180) & (b > 180) & (g < 100)
     row_runs = runs(magenta.mean(1) < 0.5)
     col_runs = runs(magenta.mean(0) < 0.5)
     assert len(row_runs) == ROWS and len(col_runs) == COLS, (row_runs, col_runs)
-    tiles = []
-    for y0, y1 in row_runs:
-        for x0, x1 in col_runs:
+    cells = {}
+    for i, (y0, y1) in enumerate(row_runs):
+        for j, (x0, x1) in enumerate(col_runs):
             m = magenta[y0:y1, x0:x1]
             ys = np.nonzero(m.mean(1) < 0.2)[0]
             xs = np.nonzero(m.mean(0) < 0.2)[0]
-            c = a[y0 + ys.min():y0 + ys.max() + 1, x0 + xs.min():x0 + xs.max() + 1]
-            tiles.append(Image.fromarray(c.astype(np.uint8)).resize((CELL, CELL), Image.LANCZOS))
+            # Unos texels más hacia adentro: el antialias deja un hilo magenta en el borde.
+            k = 3
+            cells[i, j] = a[
+                y0 + ys.min() + k:y0 + ys.max() + 1 - k, x0 + xs.min() + k:x0 + xs.max() + 1 - k
+            ]
+    tiles = []
+    for i in range(ROWS):
+        for j in range(COLS):
+            c, edge = cells[i, j], False
+            f = FIX.get((i, j)) if fix else None
+            if f and f[0] == "copy":
+                c = cells[f[1], f[2]]
+            elif f:
+                (fx0, fy0, fx1, fy1), edge = f[1], f[2]
+                h, w = c.shape[:2]
+                c = c[round(fy0 * h):round(fy1 * h), round(fx0 * w):round(fx1 * w)]
+            t = Image.fromarray(c.astype(np.uint8)).resize((CELL, CELL), Image.LANCZOS)
+            tiles.append(bevel(t) if edge else t)
     out = Image.new("RGB", (ROWS * COLS * CELL, CELL))
     for i, t in enumerate(tiles):
         out.paste(t, (i * CELL, 0))
