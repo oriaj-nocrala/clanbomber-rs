@@ -79,6 +79,14 @@ impl Assets {
                 }
             })
             .collect();
+        // Fondo del título redibujado con IA (cualquier tamaño 4:3, bilineal); si falta o con
+        // CB_SD=1, el original.
+        let title_hd = use_hd
+            .then(|| {
+                r.load_texture_smooth(dir.join("pics/clanbomber_title_hd.png"))
+                    .ok()
+            })
+            .flatten();
         let mut tex = |name: &str| {
             let path = dir.join("pics").join(name);
             r.load_texture(&path)
@@ -89,7 +97,8 @@ impl Assets {
             (tex("bombs.png"), tex("explosion2.png"), tex("extras2.png"));
         let (observer, cup) = (tex("observer.png"), tex("cup2.png"));
         let corpse_parts = tex("corpse_parts.png");
-        let (status_bg, title_bg) = (tex("game_status.png"), tex("clanbomber_title_andi.png"));
+        let status_bg = tex("game_status.png");
+        let title_bg = title_hd.unwrap_or_else(|| tex("clanbomber_title_andi.png"));
         let (player_setup_bg, map_select_bg, credits_bg) = (
             tex("playersetup.png"),
             tex("level_selection.png"),

@@ -685,6 +685,12 @@ impl Renderer {
         );
     }
 
+    /// Dibuja la textura entera ocupando toda la pantalla virtual (fondos de cualquier tamaño).
+    pub fn fullscreen(&mut self, tex: TextureId) {
+        let (w, h) = self.textures[tex.0].size;
+        self.sprite(tex, [0.0, 0.0, w, h], [0.0, 0.0, VIRTUAL_W, VIRTUAL_H]);
+    }
+
     pub fn sheet(&self, tex: TextureId, cell_w: f32, cell_h: f32) -> Sheet {
         self.sheet_scaled(tex, cell_w, cell_h, 1.0)
     }
