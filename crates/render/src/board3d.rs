@@ -83,13 +83,14 @@ pub struct Light3d {
     pub color: [f32; 3],
 }
 
-/// Caras de un [`Cube`] (la de abajo nunca se dibuja).
+/// Caras de un [`Cube`]. `ALL` no lleva la de abajo, que solo se ve si el cubo vuela o gira.
 pub mod faces {
     pub const TOP: u8 = 1;
     pub const FRONT: u8 = 2;
     pub const BACK: u8 = 4;
     pub const LEFT: u8 = 8;
     pub const RIGHT: u8 = 16;
+    pub const BOTTOM: u8 = 32;
     pub const SIDES: u8 = FRONT | BACK | LEFT | RIGHT;
     pub const ALL: u8 = TOP | SIDES;
 }
@@ -110,6 +111,8 @@ pub struct Cube {
     pub ao: f32,
     /// Qué caras dibujar (`faces::*`).
     pub faces: u8,
+    /// Giro alrededor del centro (radianes, sobre x, luego y, luego z); cero = alineado.
+    pub spin: [f32; 3],
 }
 
 #[repr(C)]
@@ -191,8 +194,19 @@ impl Scene3d {
             t[3],
         ];
         let side_colors = [t, t, low, low];
+        let rot = (c.spin != [0.0; 3]).then(|| rotation(c.spin));
+        let center = [(x0 + x1) / 2.0, (y0 + y1) / 2.0, (z0 + z1) / 2.0];
+        let turn = |p: [f32; 3], about: [f32; 3]| match rot {
+            Some(m) => {
+                let d = [p[0] - about[0], p[1] - about[1], p[2] - about[2]];
+                std::array::from_fn(|i| about[i] + m[i][0] * d[0] + m[i][1] * d[1] + m[i][2] * d[2])
+            }
+            None => p,
+        };
         let mut n = 0;
-        let mut face = |bit: u8, corners, uvr, normal, colors| {
+        let mut face = |bit: u8, corners: [[f32; 3]; 4], uvr, normal, colors| {
+            let corners = corners.map(|p| turn(p, center));
+            let normal = turn(normal, [0.0; 3]);
             if c.faces & bit != 0 && self.push_face(corners, uv(uvr), normal, colors) {
                 n += 1;
             }
@@ -232,6 +246,13 @@ impl Scene3d {
                 c.side,
                 [1.0, 0.0, 0.0],
                 side_colors,
+            );
+            face(
+                faces::BOTTOM,
+                [[x0, y0, z1], [x1, y0, z1], [x0, y0, z0], [x1, y0, z0]],
+                c.top,
+                [0.0, -1.0, 0.0],
+                [low; 4],
             );
         }
         n
@@ -450,6 +471,20 @@ fn depth_view(device: &wgpu::Device, (w, h): (u32, u32)) -> wgpu::TextureView {
         .create_view(&Default::default())
 }
 
+/// Matriz de giro (por filas) sobre x, luego y, luego z.
+fn rotation([ax, ay, az]: [f32; 3]) -> [[f32; 3]; 3] {
+    let (sx, cx) = ax.sin_cos();
+    let (sy, cy) = ay.sin_cos();
+    let (sz, cz) = az.sin_cos();
+    let rx = [[1.0, 0.0, 0.0], [0.0, cx, -sx], [0.0, sx, cx]];
+    let ry = [[cy, 0.0, sy], [0.0, 1.0, 0.0], [-sy, 0.0, cy]];
+    let rz = [[cz, -sz, 0.0], [sz, cz, 0.0], [0.0, 0.0, 1.0]];
+    let mul = |a: [[f32; 3]; 3], b: [[f32; 3]; 3]| -> [[f32; 3]; 3] {
+        std::array::from_fn(|i| std::array::from_fn(|j| (0..3).map(|k| a[i][k] * b[k][j]).sum()))
+    };
+    mul(rz, mul(ry, rx))
+}
+
 fn normalize(v: [f32; 3]) -> [f32; 3] {
     let l = (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt().max(1e-6);
     [v[0] / l, v[1] / l, v[2] / l]
@@ -534,6 +569,7 @@ mod tests {
             tint: [1.0; 4],
             ao: 0.0,
             faces: faces::ALL,
+            spin: [0.0; 3],
         };
         assert_eq!(s.push_cube(&c, (1.0, 1.0)), 5);
         c.faces = faces::TOP | faces::FRONT;
@@ -542,5 +578,26 @@ mod tests {
         c.size[1] = 0.0;
         c.faces = faces::ALL;
         assert_eq!(s.push_cube(&c, (1.0, 1.0)), 1);
+    }
+
+    #[test]
+    fn spin_turns_around_the_center() {
+        let mut s = Scene3d::default();
+        let c = Cube {
+            tex: TextureId(0),
+            min: [0.0; 3],
+            size: [2.0; 3],
+            top: [0.0, 0.0, 1.0, 1.0],
+            side: [0.0, 0.0, 1.0, 1.0],
+            tint: [1.0; 4],
+            ao: 0.0,
+            faces: faces::TOP,
+            spin: [std::f32::consts::FRAC_PI_2, 0.0, 0.0],
+        };
+        s.push_cube(&c, (1.0, 1.0));
+        // Un cuarto de vuelta sobre x: la cara de arriba pasa a mirar hacia la cámara (+z).
+        let v = &s.verts[0];
+        assert!((v.normal[2] - 1.0).abs() < 1e-5, "{:?}", v.normal);
+        assert!((v.pos[2] - 2.0).abs() < 1e-5, "{:?}", v.pos);
     }
 }

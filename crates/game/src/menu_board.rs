@@ -258,6 +258,7 @@ impl Board {
                 tint: [tint[0], tint[1], tint[2], 1.0],
                 ao,
                 faces,
+                spin: [0.0; 3],
             };
         let f = &faces_of;
         let edge = |x: usize, z: usize| x == 0 || z == 0 || x == W - 1 || z == D - 1;
