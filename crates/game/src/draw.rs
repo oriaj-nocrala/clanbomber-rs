@@ -476,7 +476,33 @@ fn draw_game(r: &mut Renderer, a: &Assets, w: &World, ui: &Ui, fx: &Sparks, play
     for b in w.bombs().filter(|b| !b.falling && !b.flight.active) {
         // sprite_nr = color * 4 + frame (color = skin del bomber que la puso).
         let cell = players[b.owner].skin as u32 * 4 + b.frame();
-        r.sheet_sprite(&a.bombs, cell, ox + b.x, oy + b.y);
+        if !sprite_fx {
+            r.sheet_sprite(&a.bombs, cell, ox + b.x, oy + b.y);
+            continue;
+        }
+        // Latido de caricatura: se aplasta y estira apoyada en el suelo, cada vez más rápido y
+        // más fuerte al acabarse la mecha; en el último segundo tiembla y destella.
+        let total = (w.config.bomb_countdown as f32 / 10.0).max(0.1);
+        let c = b.countdown.max(0.0);
+        // Fase con frecuencia creciente (su derivada en el tiempo es 2 + 3 / (c + 0.4)²).
+        let phase = std::f32::consts::TAU * ((total - c) * 2.0 + 3.0 / (c + 0.4));
+        let amp = 0.04 + 0.08 * (1.0 - c / total).clamp(0.0, 1.0);
+        let (sx, sy) = (1.0 + amp * phase.sin(), 1.0 - amp * phase.sin());
+        let nervous = (1.0 - c).clamp(0.0, 1.0);
+        let shake = nervous * 1.5 * (phase * 2.3).sin();
+        let (bw, bh) = (a.bombs.cell_w * sx, a.bombs.cell_h * sy);
+        let dst = [
+            ox + b.x + 20.0 - bw / 2.0 + shake,
+            oy + b.y + 40.0 - bh,
+            bw,
+            bh,
+        ];
+        let src = a.bombs.cell(cell);
+        r.sprite(a.bombs.tex, src, dst);
+        if nervous > 0.0 {
+            let flash = nervous * (0.5 + 0.5 * (phase * 2.0).sin()).powi(4) * 0.7;
+            r.sprite_silhouette(a.bombs.tex, src, dst, [2.0, 2.0, 2.0, flash]);
+        }
     }
     // Estelas de los bombers rápidos: siluetas de su color que se apagan (brillan con el bloom).
     if sprite_fx {
