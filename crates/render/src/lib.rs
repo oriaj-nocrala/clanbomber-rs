@@ -42,24 +42,24 @@ enum Batch {
     Light,
 }
 
-/// Hoja de sprites con celdas de tamaño fijo, numeradas en fila.
+/// Hoja de sprites con celdas de tamaño fijo, numeradas en fila. `cell_w`/`cell_h` son el
+/// tamaño de dibujo (píxeles virtuales); la textura tiene `scale` texels por píxel virtual
+/// (1 en las hojas del original, más en las reescaladas).
 #[derive(Clone, Copy)]
 pub struct Sheet {
     pub tex: TextureId,
     pub cell_w: f32,
     pub cell_h: f32,
     pub cols: u32,
+    pub scale: f32,
 }
 
 impl Sheet {
+    /// Rectángulo de la celda en texels.
     pub fn cell(&self, index: u32) -> [f32; 4] {
         let (cx, cy) = (index % self.cols, index / self.cols);
-        [
-            cx as f32 * self.cell_w,
-            cy as f32 * self.cell_h,
-            self.cell_w,
-            self.cell_h,
-        ]
+        let (w, h) = (self.cell_w * self.scale, self.cell_h * self.scale);
+        [cx as f32 * w, cy as f32 * h, w, h]
     }
 }
 
@@ -309,6 +309,16 @@ impl Renderer {
         let img = image::open(path)?.to_rgba8();
         let (w, h) = img.dimensions();
         Ok(self.load_rgba(&img, w, h))
+    }
+
+    /// Como [`load_texture`](Self::load_texture) pero con filtrado bilineal.
+    pub fn load_texture_smooth(
+        &mut self,
+        path: impl AsRef<std::path::Path>,
+    ) -> Result<TextureId, image::ImageError> {
+        let img = image::open(path)?.to_rgba8();
+        let (w, h) = img.dimensions();
+        Ok(self.upload(&img, w, h, true))
     }
 
     pub fn load_rgba(&mut self, rgba: &[u8], w: u32, h: u32) -> TextureId {
@@ -676,11 +686,17 @@ impl Renderer {
     }
 
     pub fn sheet(&self, tex: TextureId, cell_w: f32, cell_h: f32) -> Sheet {
+        self.sheet_scaled(tex, cell_w, cell_h, 1.0)
+    }
+
+    /// Hoja cuya textura tiene `scale` texels por píxel virtual (sprites reescalados).
+    pub fn sheet_scaled(&self, tex: TextureId, cell_w: f32, cell_h: f32, scale: f32) -> Sheet {
         Sheet {
             tex,
             cell_w,
             cell_h,
-            cols: (self.textures[tex.0].size.0 / cell_w) as u32,
+            cols: (self.textures[tex.0].size.0 / (cell_w * scale)) as u32,
+            scale,
         }
     }
 

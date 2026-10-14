@@ -48,14 +48,6 @@ pub struct Assets {
 impl Assets {
     pub fn load(r: &mut Renderer) -> Assets {
         let dir = crate::paths::assets_dir();
-        let mut tex = |name: &str| {
-            let path = dir.join("pics").join(name);
-            r.load_texture(&path)
-                .unwrap_or_else(|e| panic!("{}: {e}", path.display()))
-        };
-        let (maptiles, addons) = (tex("maptiles.png"), tex("maptile_addons.png"));
-        let (bombs, explosion, extras) =
-            (tex("bombs.png"), tex("explosion2.png"), tex("extras2.png"));
         // (archivo, alto de celda, offset_y): los de 60 px de alto se dibujan a y + 11.
         let skin_files = [
             ("bomber_snake.png", 60.0, 11.0),
@@ -67,10 +59,34 @@ impl Assets {
             ("bomber_dull_yellow.png", 40.0, 40.0),
             ("bomber_dull_green.png", 40.0, 40.0),
         ];
+        // Versiones reescaladas por IA (`<nombre>_hd.png`, 4x, filtrado bilineal porque casi
+        // siempre se dibujan más pequeñas que la textura). CB_SD=1 fuerza las originales.
+        const HD_SCALE: f32 = 4.0;
+        let use_hd = std::env::var_os("CB_SD").is_none();
         let skin_tex: Vec<_> = skin_files
             .iter()
-            .map(|(f, h, o)| (tex(f), *h, *o))
+            .map(|(f, h, o)| {
+                let hd = dir.join("pics").join(f.replace(".png", "_hd.png"));
+                match use_hd.then(|| r.load_texture_smooth(&hd).ok()).flatten() {
+                    Some(t) => (t, *h, *o, HD_SCALE),
+                    None => {
+                        let path = dir.join("pics").join(f);
+                        let t = r
+                            .load_texture(&path)
+                            .unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+                        (t, *h, *o, 1.0)
+                    }
+                }
+            })
             .collect();
+        let mut tex = |name: &str| {
+            let path = dir.join("pics").join(name);
+            r.load_texture(&path)
+                .unwrap_or_else(|e| panic!("{}: {e}", path.display()))
+        };
+        let (maptiles, addons) = (tex("maptiles.png"), tex("maptile_addons.png"));
+        let (bombs, explosion, extras) =
+            (tex("bombs.png"), tex("explosion2.png"), tex("extras2.png"));
         let (observer, cup) = (tex("observer.png"), tex("cup2.png"));
         let corpse_parts = tex("corpse_parts.png");
         let (status_bg, title_bg) = (tex("game_status.png"), tex("clanbomber_title_andi.png"));
@@ -103,8 +119,8 @@ impl Assets {
             extras: r.sheet(extras, 40.0, 40.0),
             skins: skin_tex
                 .into_iter()
-                .map(|(t, h, o)| Skin {
-                    sheet: r.sheet(t, 40.0, h),
+                .map(|(t, h, o, scale)| Skin {
+                    sheet: r.sheet_scaled(t, 40.0, h, scale),
                     offset_y: o,
                 })
                 .collect(),
