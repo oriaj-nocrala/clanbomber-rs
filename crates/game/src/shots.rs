@@ -165,6 +165,8 @@ impl App {
             "new-game" => {
                 self.screen = Screen::Menu;
                 self.menu.key(KeyCode::Enter);
+                // El letrero ya de frente, sin el giro de entrada.
+                self.sign.settle(self.sign_card());
             }
             "gameplay-ice" | "gameplay-jungle" => {
                 let (theme, map) = if name == "gameplay-ice" {
@@ -221,6 +223,7 @@ impl App {
                 ps.key(KeyCode::ArrowRight, None, &mut self.config, 0);
                 ps.key(KeyCode::ArrowRight, None, &mut self.config, 0);
                 self.screen = Screen::PlayerSetup(ps);
+                self.sign.settle(self.sign_card());
             }
             "map-select" => {
                 self.config = config_with(&[(0, AI, 0), (1, AI, 0)], 4);
@@ -233,6 +236,7 @@ impl App {
                     self.config.disabled_maps = vec!["Arena".into(), "Boiling_Egg".into()];
                     if let Some(ms) = MapSelect::new(&list, &self.config, a) {
                         self.screen = Screen::MapSelect(ms);
+                        self.sign.settle(self.sign_card());
                     }
                 }
             }
@@ -250,7 +254,10 @@ impl App {
                 c.advance(4.0);
                 self.screen = Screen::Credits(c);
             }
-            "help" => self.screen = Screen::Help(Help::new()),
+            "help" => {
+                self.screen = Screen::Help(Help::new());
+                self.sign.settle(self.sign_card());
+            }
             "gameplay-gif" => {
                 let cfg = config_with(&[(0, AI, 0), (1, AI, 0), (2, AI, 0), (3, AI, 0)], 0);
                 self.launch(cfg, SEED + 5, Some("FireWheels"));

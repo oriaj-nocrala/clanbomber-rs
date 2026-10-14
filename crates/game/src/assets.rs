@@ -10,6 +10,11 @@ pub struct Skin {
 
 pub struct Assets {
     pub maptiles: Sheet,
+    /// La misma hoja con mipmaps, para el tablero 3D del menú (se ve muy reducida y en ángulo).
+    pub maptiles_3d: Sheet,
+    /// maptiles_cubes.png (opcional): por tema, arriba y lado del muro, arriba y lado de la caja y
+    /// la tierra bajo la isla, para los cubos del tablero 3D (`tools/sprites/cubes.py`).
+    pub cubes: Option<Sheet>,
     pub addons: Sheet,
     /// Los 8 aspectos, en el orden de `Resources::Bombers`.
     pub skins: Vec<Skin>,
@@ -28,18 +33,17 @@ pub struct Assets {
     pub status_bg: TextureId,
     pub title_bg: TextureId,
     /// Fondos de las pantallas de menú (800x600).
-    pub player_setup_bg: TextureId,
-    pub map_select_bg: TextureId,
     pub credits_bg: TextureId,
     pub editor_bg: TextureId,
-    /// ps_teams.png y ps_controls.png: 5 celdas de 125x56 en vertical.
-    pub ps_teams: Sheet,
-    pub ps_controls: Sheet,
     /// ps_teamlamps.png: la lámpara de cada equipo (4 celdas de 30x32).
     pub team_lamps: Sheet,
     pub not_available: TextureId,
     pub cb_logo: TextureId,
     pub fl_logo: TextureId,
+    /// Disco blanco que se desvanece hacia el borde (halos de luz, llamas).
+    pub glow: TextureId,
+    /// sign.png: el letrero de madera de los submenús, en 9 partes (`tools/sprites/sign.py`).
+    pub sign: TextureId,
     /// DejaVuSans-Bold a 28 y a 18 px (Resources::Font_big / Font_small).
     pub font_big: Font,
     pub font_small: Font,
@@ -74,6 +78,19 @@ impl Assets {
             .iter()
             .map(|(f, h, o)| (load_pic(r, &dir, f), *h, *o))
             .collect();
+        // Celdas de 160 texels: 5 niveles (hasta 10) para no mezclar celdas vecinas.
+        let maptiles_3d = {
+            let path = dir.join("pics/maptiles.png");
+            r.load_texture_mipmapped(&path, 5)
+                .unwrap_or_else(|e| panic!("{}: {e}", path.display()))
+        };
+        let cubes = {
+            let path = dir.join("pics/maptiles_cubes.png");
+            path.exists().then(|| {
+                r.load_texture_mipmapped(&path, 5)
+                    .unwrap_or_else(|e| panic!("{}: {e}", path.display()))
+            })
+        };
         let mut pic = |name: &str| load_pic(r, &dir, name);
         let maptiles = pic("maptiles.png");
         let addons = pic("maptile_addons.png");
@@ -82,24 +99,35 @@ impl Assets {
         let observer = pic("observer.png");
         let cup = pic("cup2.png");
         let corpse_parts = pic("corpse_parts.png");
-        let ps_teams = pic("ps_teams.png");
         let team_lamps = pic("ps_teamlamps.png");
-        let ps_controls = pic("ps_controls.png");
         let explosion = pic("explosion2.png");
         // Los fondos pueden tener cualquier tamaño 4:3 (`Renderer::fullscreen`).
         let status_bg = pic("game_status.png");
         let title_bg = pic("clanbomber_title_andi.png");
-        let player_setup_bg = pic("playersetup.png");
-        let map_select_bg = pic("level_selection.png");
         let credits_bg = pic("horst_evil.png");
         let editor_bg = pic("map_editor.png");
         let not_available = pic("not_available.png");
+        let sign = pic("sign.png");
         let cb_logo = pic("cb_logo_small.png");
         // El logo de Fischlustig (los autores del original) se queda como era, sin filtrar.
         let fl_logo = {
             let path = dir.join("pics/fischlustig_logo.png");
             r.load_texture(&path)
                 .unwrap_or_else(|e| panic!("{}: {e}", path.display()))
+        };
+
+        let glow = {
+            const N: u32 = 64;
+            let rgba: Vec<u8> = (0..N * N)
+                .flat_map(|i| {
+                    let (x, y) = ((i % N) as f32 + 0.5, (i / N) as f32 + 0.5);
+                    let d = ((x - N as f32 / 2.0).hypot(y - N as f32 / 2.0) / (N as f32 / 2.0))
+                        .min(1.0);
+                    let a = (1.0 - d * d).powi(2);
+                    [255, 255, 255, (a * 255.0).round() as u8]
+                })
+                .collect();
+            r.load_rgba_smooth(&rgba, N, N)
         };
 
         let font = |r: &mut Renderer, px: f32| {
@@ -111,6 +139,8 @@ impl Assets {
 
         Assets {
             maptiles: r.sheet_scaled(maptiles, 40.0, 40.0, SCALE),
+            maptiles_3d: r.sheet_scaled(maptiles_3d, 40.0, 40.0, SCALE),
+            cubes: cubes.map(|t| r.sheet_scaled(t, 40.0, 40.0, SCALE)),
             addons: r.sheet_scaled(addons, 40.0, 40.0, SCALE),
             bombs: r.sheet_scaled(bombs, 40.0, 40.0, SCALE),
             explosion: r.sheet_scaled(explosion, 40.0, 40.0, SCALE),
@@ -127,16 +157,14 @@ impl Assets {
             corpse_parts: r.sheet_scaled(corpse_parts, 40.0, 40.0, SCALE),
             status_bg,
             title_bg,
-            player_setup_bg,
-            map_select_bg,
             credits_bg,
             editor_bg,
-            ps_teams: r.sheet_scaled(ps_teams, 125.0, 56.0, SCALE),
-            ps_controls: r.sheet_scaled(ps_controls, 125.0, 56.0, SCALE),
             team_lamps: r.sheet_scaled(team_lamps, 30.0, 32.0, SCALE),
             not_available,
             cb_logo,
             fl_logo,
+            glow,
+            sign,
             font_big,
             font_small,
         }

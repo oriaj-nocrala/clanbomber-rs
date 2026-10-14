@@ -15,6 +15,8 @@ mod lighting;
 mod map_editor;
 mod map_select;
 mod menu;
+mod menu_board;
+mod menu_sign;
 mod paths;
 mod player_setup;
 mod screen;
@@ -50,6 +52,7 @@ use joystick::Joysticks;
 use map_editor::MapEditor;
 use map_select::MapSelect;
 use menu::{Id, Menu, Outcome};
+use menu_sign::Card;
 use player_setup::PlayerSetup;
 use screen::Flow;
 use sparks::Sparks;
@@ -109,6 +112,10 @@ struct App {
     video: Video,
     video_path: Option<PathBuf>,
     menu: Menu,
+    /// El menú raíz como tablero 3D.
+    board: menu_board::Board,
+    /// Los submenús como letreros sobre el tablero.
+    sign: menu_sign::Sign,
     world: Option<World>,
     players: Vec<Player>,
     /// Qué gobierna a cada bomber del mundo.
@@ -268,6 +275,27 @@ impl App {
         true
     }
 
+    /// Lo que va en el letrero sobre el tablero: el submenú abierto o la pantalla que cuelga
+    /// de él; nada en la raíz.
+    fn sign_card(&self) -> Option<Card> {
+        let panel = |id, size| Card::Panel {
+            id,
+            depth: self.menu.page().depth + 1,
+            size,
+        };
+        match &self.screen {
+            Screen::PlayerSetup(_) => Some(panel(Id::PlayerSetup, player_setup::PANEL)),
+            Screen::MapSelect(_) => Some(panel(Id::MapSelection, map_select::PANEL)),
+            // Cada página de la ayuda es un letrero aparte (un nivel más hondo), así gira al pasar.
+            Screen::Help(h) => Some(Card::Panel {
+                id: Id::Help,
+                depth: 1 + h.page(),
+                size: help::PANEL,
+            }),
+            _ => (!self.menu.at_root()).then(|| Card::Page(self.menu.page())),
+        }
+    }
+
     fn open_map_select(&mut self) {
         let Some(a) = self.assets.as_ref() else {
             return;
@@ -371,12 +399,34 @@ impl App {
     }
 
     fn menu_key(&mut self, el: &ActiveEventLoop, code: KeyCode) {
+        // En la raíz, el tablero 3D anima la elección antes de entrar.
+        if self.menu.at_root() && self.gfx.is_some() {
+            match self.board.key(code, self.menu.root_choice()) {
+                menu_board::KeyAction::Pass => {}
+                menu_board::KeyAction::Lit => {
+                    self.audio.play(Sfx::PutBomb);
+                    return;
+                }
+                menu_board::KeyAction::Consumed => return,
+                menu_board::KeyAction::Finish => {
+                    self.menu_apply_key(el, KeyCode::Enter);
+                    if matches!(code, KeyCode::Enter | KeyCode::NumpadEnter) {
+                        return;
+                    }
+                }
+            }
+        }
+        self.menu_apply_key(el, code);
+    }
+
+    fn menu_apply_key(&mut self, el: &ActiveEventLoop, code: KeyCode) {
         let at_root = self.menu.at_root();
         let outcome = self.menu.key(code);
         match (&outcome, code) {
             (_, KeyCode::ArrowUp | KeyCode::ArrowDown) | (Outcome::Changed(..), _) => {
                 self.audio.play(Sfx::Break)
             }
+            (_, KeyCode::ArrowLeft | KeyCode::ArrowRight) if at_root => self.audio.play(Sfx::Break),
             // Entrar en un submenú o volver a uno superior.
             (Outcome::None, KeyCode::Enter | KeyCode::NumpadEnter) => self.audio.play(Sfx::Clear),
             (Outcome::None, KeyCode::Escape) if !at_root => self.audio.play(Sfx::Clear),
@@ -611,6 +661,29 @@ impl ApplicationHandler for App {
                             self.screen = Screen::Menu;
                         }
                     }
+                    Screen::Menu
+                    | Screen::PlayerSetup(_)
+                    | Screen::MapSelect(_)
+                    | Screen::Help(_) => {
+                        self.acc = 0.0;
+                        // La ayuda cuelga de la raíz pero tapa el tablero: la caja sigue abierta.
+                        let at_root = self.menu.at_root() && matches!(self.screen, Screen::Menu);
+                        let choice = self.menu.root_choice();
+                        let event = self
+                            .gfx
+                            .as_mut()
+                            .and_then(|(_, r)| self.board.update(r, frame as f32, choice, at_root));
+                        match event {
+                            Some(menu_board::Event::Exploded) => self.audio.play(Sfx::Explode),
+                            Some(menu_board::Event::Enter)
+                                if matches!(self.screen, Screen::Menu) =>
+                            {
+                                self.menu_apply_key(el, KeyCode::Enter)
+                            }
+                            _ => {}
+                        }
+                        self.sign.update(frame as f32, self.sign_card());
+                    }
                     _ => self.acc = 0.0,
                 }
                 if !matches!(self.screen, Screen::Game) {
@@ -640,14 +713,6 @@ impl ApplicationHandler for App {
                             self.paused,
                             self.slowmo.highlight().filter(|_| self.video.shockwaves),
                         ),
-                        (Screen::PlayerSetup(s), _) => {
-                            s.draw(r, a, &self.config, time);
-                            r.render();
-                        }
-                        (Screen::MapSelect(s), _) => {
-                            s.draw(r, a, &self.config);
-                            r.render();
-                        }
                         (Screen::MapEditor(s), _) => {
                             s.draw(r, a, &self.config);
                             r.render();
@@ -660,12 +725,39 @@ impl ApplicationHandler for App {
                             s.draw(r, a);
                             r.render();
                         }
-                        (Screen::Help(s), _) => {
-                            s.draw(r, a);
-                            r.render();
-                        }
                         _ => {
-                            self.menu.draw(r, a);
+                            // El tablero siempre; en un submenú, su letrero encima.
+                            let skin = self.config.bombers.first().map_or(0, |b| b.skin as usize);
+                            self.board.draw(
+                                r,
+                                a,
+                                &self.menu.root_labels(),
+                                self.menu.root_choice(),
+                                menu_board::Look {
+                                    theme: self.config.theme.clamp(0, 5) as u32,
+                                    skin,
+                                    fire_shader: self.video.fire,
+                                    shockwaves: self.video.shockwaves,
+                                    shake: self.config.shaky_explosions,
+                                    labels: self.menu.at_root()
+                                        && matches!(self.screen, Screen::Menu),
+                                },
+                            );
+                            self.sign.draw(r, a, time, skin);
+                            // Las pantallas con letrero propio dibujan dentro cuando ya está de frente.
+                            if let Some(front) = self.sign.front() {
+                                match &self.screen {
+                                    Screen::PlayerSetup(s) => {
+                                        s.draw(r, a, &self.config, &front, time, skin)
+                                    }
+                                    Screen::MapSelect(s) => {
+                                        s.draw(r, a, &self.config, &front, time)
+                                    }
+                                    Screen::Help(s) => s.draw(r, a, &front),
+                                    _ => {}
+                                }
+                            }
+                            self.board.draw_flash(r);
                             r.render();
                         }
                     }
@@ -711,6 +803,8 @@ fn main() {
         video,
         video_path,
         menu,
+        board: menu_board::Board::new(0),
+        sign: menu_sign::Sign::new(),
         world: None,
         players: Vec::new(),
         controls: Vec::new(),

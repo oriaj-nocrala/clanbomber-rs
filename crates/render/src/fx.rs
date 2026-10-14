@@ -772,6 +772,7 @@ mod tests {
             ("heat.wgsl", include_str!("heat.wgsl")),
             ("fire.wgsl", include_str!("fire.wgsl")),
             ("light.wgsl", include_str!("light.wgsl")),
+            ("board3d.wgsl", include_str!("board3d.wgsl")),
         ] {
             let module = naga::front::wgsl::parse_str(src)
                 .unwrap_or_else(|e| panic!("{name}: {}", e.emit_to_string(src)));
@@ -823,6 +824,18 @@ mod tests {
         assert_eq!(
             module.types[h].inner.size(module.to_ctx()) as usize,
             std::mem::size_of::<crate::light::LightUniform>()
+        );
+
+        let src = include_str!("board3d.wgsl");
+        let module = naga::front::wgsl::parse_str(src).unwrap();
+        let (h, _) = module
+            .types
+            .iter()
+            .find(|(_, t)| t.name.as_deref() == Some("Scene"))
+            .unwrap();
+        assert_eq!(
+            module.types[h].inner.size(module.to_ctx()) as usize,
+            std::mem::size_of::<crate::board3d::SceneUniform>()
         );
     }
 }

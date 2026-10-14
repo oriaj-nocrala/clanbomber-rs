@@ -31,6 +31,12 @@ referencia: `git show 3af9c68:assets/pics/<nombre>.png > original.png`.
 - `extras.py <ia.png> <salida.png>`: `extras2.png` desde una tira de 8 fichas (opacas).
 - `maptiles.py <ia.png> <salida.png> [prev.png]`: `maptiles.png` desde una grilla de 4x6
   separada por franjas magenta; los suelos orgánicos se empalman en los bordes.
+- `cubes.py ref <maptiles.png> <ref.png>` / `cubes.py build <ia.png> <salida.png> [prueba.png]`:
+  `maptiles_cubes.png` (opcional) para el tablero 3D del menú: por tema, arriba y lado del muro,
+  arriba y lado de la caja y la tierra de la isla, desde una grilla de 5x6 sobre magenta. `ref`
+  arma la referencia para ChatGPT con muro, caja y suelo de cada tema.
+- `sign.py <salida.png>`: `sign.png`, el letrero de madera de los submenús, generado por código
+  (no es IA): marco con inglete y clavos, fondo oscuro; se dibuja en 9 partes.
 - `addons.py <ia.png> <salida.png> <prev.png>`: `maptile_addons.png` (hielo translúcido,
   flechas con la misma escala, ?, X y trampa) desde una tira con fondo transparente.
 - `varios.py <ia.png> <dir_pics> <prev.png>`: observador y relojes, copa, trozos de cadáver y

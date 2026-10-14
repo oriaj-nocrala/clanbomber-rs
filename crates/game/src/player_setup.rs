@@ -1,18 +1,23 @@
 //! Pantalla `Local Player Setup` (ClanBomber2: PlayerSetup.cpp): 8 puestos con aspecto, nombre,
-//! equipo y controlador.
+//! equipo y controlador. Se dibuja en el letrero de madera sobre el tablero del menú.
 
 use cb_core::{Config, ControllerKind, NR_SKINS};
 use cb_render::{Align, Renderer};
 use winit::keyboard::KeyCode;
 
 use crate::assets::Assets;
-use crate::draw::{srgb_rgba, text_color};
+use crate::draw::{srgb_rgba, TEAM_COLORS, TEAM_NAMES};
+use crate::menu_sign::{self as sign, Front, Tone};
 use crate::screen::{EditResult, Flow, TextEdit};
 
 /// Columnas navegables: aspecto, nombre, equipo y controlador.
 const COLS: usize = 4;
-/// Límites de las columnas en píxeles (`cg` del original).
-const COL_EDGES: [f32; 5] = [17.0, 95.0, 340.0, 500.0, 720.0];
+/// Límites de las columnas desde el borde izquierdo de lo que hay dentro del letrero.
+const COL_EDGES: [f32; 5] = [20.0, 90.0, 340.0, 490.0, 690.0];
+/// Alto de cada fila de jugador.
+const ROW_H: f32 = 50.0;
+/// Tamaño del letrero.
+pub const PANEL: [f32; 2] = [780.0, 590.0];
 /// Controladores que se recorren con Enter (sin joysticks detectados: `6 + count`).
 const CONTROLLERS: [ControllerKind; 4] = [
     ControllerKind::Ai,
@@ -108,129 +113,183 @@ impl PlayerSetup {
         (Flow::Stay, false)
     }
 
-    /// `time` en segundos, para el parpadeo del campo de nombre.
-    pub fn draw(&self, r: &mut Renderer, a: &Assets, c: &Config, time: f32) {
-        let col = text_color();
-        let editing = self.edit.is_some();
-        r.fullscreen(a.player_setup_bg);
-        r.text(&a.font_small, "SKIN", 55.0, 40.0, col, Align::Center);
-        r.text(&a.font_small, "NAME", 130.0, 40.0, col, Align::Center);
-        r.text(&a.font_small, "TEAM", 418.0, 40.0, col, Align::Center);
-        r.text(&a.font_small, "Controller", 612.0, 40.0, col, Align::Center);
-        r.text(
-            &a.font_small,
-            "SPACE ENABLES OR DISABLES A PLAYER, H TOGGLES HIGHLIGHTING",
-            12.0,
-            580.0,
-            col,
-            Align::Left,
+    /// El contenido del letrero ya de frente (`menu_sign::Front`); `time` en segundos, para el
+    /// parpadeo del campo de nombre y la bomba que hace de cursor.
+    #[allow(clippy::too_many_arguments)]
+    pub fn draw(
+        &self,
+        r: &mut Renderer,
+        a: &Assets,
+        c: &Config,
+        front: &Front,
+        time: f32,
+        skin: usize,
+    ) {
+        let alpha = front.alpha;
+        let [left, top, width, _] = sign::inner(front.rect);
+        let (big, small) = (&a.font_big, &a.font_small);
+        let fh = big.line_height().round();
+        sign::title(
+            r,
+            big,
+            "Local Player Setup",
+            left + width / 2.0,
+            top - 6.0,
+            alpha,
         );
 
-        let row_y = |i: usize| 70.0 + i as f32 * 63.0;
-        r.quad(
-            0.0,
-            row_y(self.row),
-            800.0,
-            63.0,
-            srgb_rgba(55, 110, 220, 70),
-        );
-        if !editing {
-            let (x0, x1) = (COL_EDGES[self.col], COL_EDGES[self.col + 1]);
-            r.quad(
-                x0,
-                row_y(self.row),
-                x1 - x0,
-                63.0,
-                srgb_rgba(40, 40, 240, 120),
-            );
+        // Columnas: aspecto, nombre, equipo y controlador (límites desde el borde izquierdo).
+        let edges = COL_EDGES.map(|x| left + x);
+        let center = |i: usize| (edges[i] + edges[i + 1]) / 2.0;
+        let head_y = top + fh * 1.3;
+        for (i, h) in ["Skin", "Name", "Team", "Controller"].iter().enumerate() {
+            let tone = if i == self.col && self.edit.is_none() {
+                Tone::Selected
+            } else {
+                Tone::Dim
+            };
+            sign::label(r, small, h, center(i), head_y, Align::Center, tone, alpha);
         }
 
+        let row_y = |i: usize| head_y + small.line_height() + 6.0 + i as f32 * ROW_H;
+        let text_y = |i: usize| row_y(i) + (ROW_H - fh) / 2.0;
+        let (x0, x1) = (edges[0], edges[COLS]);
         for (i, b) in c.bombers.iter().enumerate() {
             let y = row_y(i);
+            let selected = i == self.row;
+            if selected {
+                sign::highlight(r, a, [x0, y + 2.0, x1 - x0, ROW_H - 4.0], 0.8, alpha);
+                if self.edit.is_none() {
+                    let (cx0, cx1) = (edges[self.col], edges[self.col + 1]);
+                    sign::highlight(r, a, [cx0, y + 2.0, cx1 - cx0, ROW_H - 4.0], 1.2, alpha);
+                }
+            }
+            let tone = |selected_cell: bool| match (b.enabled, selected && selected_cell) {
+                (false, _) => Tone::Dim,
+                (true, true) => Tone::Selected,
+                (true, false) => Tone::Normal,
+            };
+            let on_col = |col: usize| self.edit.is_none() && self.col == col;
+
+            // Aspecto: la pose 0, apoyada en la base de la fila; la casilla resaltada detrás.
+            let sk = &a.skins[b.skin as usize % a.skins.len()];
+            let h = ROW_H - 6.0;
+            let w = h * sk.sheet.cell_w / sk.sheet.cell_h;
             if b.highlight_maptile {
                 r.quad(
-                    34.0,
-                    90.0 + i as f32 * 63.0,
-                    40.0,
-                    40.0,
-                    srgb_rgba(0, 0, 0xFF, 50),
+                    center(0) - h / 2.0,
+                    y + 3.0,
+                    h,
+                    h,
+                    [0.0, 0.05, 1.0, 0.3 * alpha],
                 );
             }
-            // Pose 0 del aspecto, apoyada en la base de la fila.
-            let skin = &a.skins[b.skin as usize % a.skins.len()];
-            r.sheet_sprite(
-                &skin.sheet,
-                0,
-                35.0,
-                130.0 + i as f32 * 63.0 - skin.sheet.cell_h,
+            r.sprite_tinted(
+                sk.sheet.tex,
+                sk.sheet.cell(0),
+                [center(0) - w / 2.0, y + 3.0, w, h],
+                [1.0, 1.0, 1.0, alpha],
             );
 
-            // El nombre que se está editando se enseña pequeño debajo del cuadro de edición.
-            let font = if editing && self.row == i {
-                &a.font_small
-            } else {
-                &a.font_big
-            };
-            r.text(
-                font,
-                &b.name,
-                130.0,
-                90.0 + i as f32 * 63.0,
-                col,
-                Align::Left,
-            );
-
-            r.sheet_sprite(&a.ps_teams, b.team as u32, 360.0, y + 2.0);
-            match b.controller {
-                ControllerKind::Ai => {
-                    r.sheet_sprite(&a.ps_controls, 0, 550.0, y + 2.0);
-                    r.text(
-                        &a.font_small,
-                        "DOK",
-                        650.0,
-                        102.0 + i as f32 * 63.0,
-                        col,
-                        Align::Right,
-                    );
-                }
-                ControllerKind::Keymap(n) => {
-                    r.sheet_sprite(&a.ps_controls, n as u32, 550.0, y + 2.0)
-                }
-                ControllerKind::Joystick(n) => {
-                    r.sheet_sprite(&a.ps_controls, 4, 550.0, y + 2.0);
-                    r.text(&a.font_small, &n.to_string(), 620.0, y, col, Align::Left);
-                }
+            // Nombre: el que se edita va en un cuadro verde que late, con su cursor.
+            let name_x = edges[1] + 10.0;
+            if selected && self.edit.is_some() {
+                let pulse = 0.5 + 0.5 * (time * std::f32::consts::TAU * 2.0).sin();
+                r.quad(
+                    edges[1],
+                    y + 3.0,
+                    edges[2] - edges[1],
+                    ROW_H - 6.0,
+                    [0.03, 0.45, 0.15, (0.35 + 0.35 * pulse) * alpha],
+                );
             }
+            let name = match &self.edit {
+                Some(edit) if selected => {
+                    let caret = if time % 0.8 < 0.4 { "_" } else { " " };
+                    format!("{}{caret}", edit.text())
+                }
+                _ => b.name.clone(),
+            };
+            sign::label(
+                r,
+                big,
+                &name,
+                name_x,
+                text_y(i),
+                Align::Left,
+                tone(on_col(1)),
+                alpha,
+            );
+
+            // Equipo: su nombre en su color, con un brillo detrás.
+            let team_tone = match b.team {
+                0 => tone(on_col(2)),
+                t if b.enabled && !(selected && on_col(2)) => {
+                    let (cr, cg, cb) = TEAM_COLORS[t as usize - 1];
+                    let [lr, lg, lb, _] = srgb_rgba(cr, cg, cb, 255);
+                    Tone::Color([lr, lg, lb])
+                }
+                _ => tone(on_col(2)),
+            };
+            let team = match b.team {
+                0 => "None",
+                t => TEAM_NAMES[t as usize - 1].trim_end_matches(" Team"),
+            };
+            sign::label(
+                r,
+                big,
+                team,
+                center(2),
+                text_y(i),
+                Align::Center,
+                team_tone,
+                alpha,
+            );
+
+            let controller = match b.controller {
+                ControllerKind::Ai => "Computer".to_owned(),
+                ControllerKind::Keymap(n) => format!("Keyboard {n}"),
+                ControllerKind::Joystick(n) => format!("Gamepad {n}"),
+            };
+            let ctl_tone = tone(on_col(3));
+            sign::label(
+                r,
+                big,
+                &controller,
+                center(3),
+                text_y(i),
+                Align::Center,
+                ctl_tone,
+                alpha,
+            );
+
+            // Los puestos apagados, en sombra.
             if !b.enabled {
-                r.quad(0.0, y, 800.0, 63.0, srgb_rgba(0, 0, 0, 170));
+                let (bx, bw) = (x0 - 4.0, x1 - x0 + 8.0);
+                r.quad(bx, y + 2.0, bw, ROW_H - 4.0, [0.0, 0.0, 0.0, 0.6 * alpha]);
+            }
+            if selected && self.edit.is_none() {
+                let cy = text_y(i) + fh * 0.4;
+                sign::bomb_cursor(r, a, x0 - 12.0, cy, fh * 0.8, time, skin, alpha);
             }
         }
 
-        if let Some(edit) = &self.edit {
-            // Cuadro de edición que parpadea (periodo de 0.5 s).
-            let phase = time % 0.5;
-            let alpha = if phase > 0.25 {
-                (0.5 - phase) * 3.0
-            } else {
-                phase * 3.0
-            };
-            let y = row_y(self.row);
-            r.quad(
-                95.0,
-                y,
-                245.0,
-                63.0,
-                [0.03, 0.72, 0.22, alpha.clamp(0.0, 1.0)],
-            );
-            r.text(
-                &a.font_big,
-                &edit.text(),
-                130.0,
-                90.0 + self.row as f32 * 63.0,
-                col,
-                Align::Left,
-            );
-        }
+        let hint = if self.edit.is_some() {
+            "ENTER ACCEPTS THE NAME, ESC CANCELS"
+        } else {
+            "ENTER CHANGES · SPACE ENABLES A PLAYER · H HIGHLIGHTS ITS TILE"
+        };
+        let hint_y = row_y(c.bombers.len()) + 4.0;
+        sign::label(
+            r,
+            small,
+            hint,
+            left + width / 2.0,
+            hint_y,
+            Align::Center,
+            Tone::Dim,
+            alpha,
+        );
     }
 }
 

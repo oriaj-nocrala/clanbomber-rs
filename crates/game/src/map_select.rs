@@ -1,12 +1,14 @@
 //! Pantalla `Map Selection` (ClanBomber2: MapSelector.cpp): lista de mapas con vista previa,
-//! marcas de activado y elección de tema.
+//! marcas de activado y elección de tema. Se dibuja en el letrero de madera sobre el tablero
+//! del menú.
 
 use cb_core::{Config, Map, MapList};
 use cb_render::{Align, Renderer};
 use winit::keyboard::KeyCode;
 
 use crate::assets::Assets;
-use crate::draw::{draw_map_preview, srgb_rgba, text_color};
+use crate::draw::draw_map_preview;
+use crate::menu_sign::{self as sign, Front, Tone};
 use crate::screen::Flow;
 
 const THEMES: [&str; 6] = [
@@ -19,6 +21,8 @@ const THEMES: [&str; 6] = [
 ];
 /// Filas visibles de la lista.
 const VISIBLE: usize = 11;
+/// Tamaño del letrero.
+pub const PANEL: [f32; 2] = [780.0, 560.0];
 
 pub struct MapSelect {
     maps: Vec<Map>,
@@ -116,121 +120,185 @@ impl MapSelect {
         (Flow::Stay, false)
     }
 
-    pub fn draw(&self, r: &mut Renderer, a: &Assets, c: &Config) {
-        let col = text_color();
-        let map = &self.maps[self.current];
-        r.fullscreen(a.map_select_bg);
-
-        r.text(&a.font_big, &map.name, 510.0, 50.0, col, Align::Center);
-        r.text(
-            &a.font_small,
-            "SPACE   TOGGLE CURRENT SELECTION",
-            10.0,
-            530.0,
-            col,
-            Align::Left,
-        );
-        r.text(
-            &a.font_small,
-            "A   SELECT ALL MAPS",
-            10.0,
-            550.0,
-            col,
-            Align::Left,
-        );
-        r.text(
-            &a.font_small,
-            "S   SELECT CURRENT MAP ONLY",
-            10.0,
-            570.0,
-            col,
-            Align::Left,
-        );
-        r.text(
-            &a.font_small,
-            &format!("by {}", map.author),
-            510.0,
-            90.0,
-            col,
-            Align::Center,
+    /// El contenido del letrero ya de frente (`menu_sign::Front`): la lista a la izquierda y la
+    /// vista previa del mapa a la derecha.
+    pub fn draw(&self, r: &mut Renderer, a: &Assets, c: &Config, front: &Front, time: f32) {
+        let alpha = front.alpha;
+        let [left, top, width, height] = sign::inner(front.rect);
+        let (big, small) = (&a.font_big, &a.font_small);
+        let (fh, sh) = (big.line_height().round(), small.line_height().round());
+        let right = left + width;
+        sign::title(
+            r,
+            big,
+            "Map Selection",
+            left + width / 2.0,
+            top - 6.0,
+            alpha,
         );
 
-        // Temas: el elegido va resaltado en rojo.
-        r.quad(
-            30.0 + c.theme as f32 * 120.0,
-            423.0,
-            120.0,
-            30.0,
-            srgb_rgba(255, 0, 0, 128),
-        );
-        // En el original los nombres largos se pisan; aquí se encogen para caber en su casilla.
-        for (i, name) in THEMES.iter().enumerate() {
-            r.text_fit(
-                &a.font_small,
-                name,
-                90.0 + i as f32 * 120.0,
-                428.0,
-                col,
+        // Lista: la fila actual brilla; los mapas activos llevan una chispa delante.
+        let list_top = top + fh * 1.5;
+        let row_h = sh + 6.0;
+        let more_x = left + self.list_width / 2.0;
+        if self.top > 0 {
+            sign::label(
+                r,
+                small,
+                "...",
+                more_x,
+                list_top - row_h * 0.8,
                 Align::Center,
-                112.0,
+                Tone::Dim,
+                alpha,
             );
         }
-
-        draw_map_preview(
-            r,
-            a,
-            map,
-            c.theme.clamp(0, 5) as u32,
-            350.0,
-            125.0,
-            0.5,
-            true,
-        );
-
-        let max_text = format!("THIS MAP IS ONLY FOR UP TO {} PLAYERS", map.max_players);
-        if (map.max_players as usize) < c.number_of_players() {
-            r.sprite_whole(a.not_available, [402.0, 128.0, 256.0, 256.0], [1.0; 4]);
-            r.quad(200.0, 494.0, 400.0, 27.0, srgb_rgba(255, 0, 0, 128));
-        }
-        r.text(&a.font_small, &max_text, 400.0, 500.0, col, Align::Center);
-
-        // Lista.
-        let (list_top, row_h) = (116.0, 25.0);
-        r.quad(
-            15.0,
-            list_top,
-            self.list_width,
-            391.0 - list_top,
-            srgb_rgba(76, 76, 76, 128),
-        );
-        r.quad(
-            15.0,
-            list_top + (self.current - self.top) as f32 * row_h,
-            self.list_width,
-            row_h,
-            srgb_rgba(25, 80, 200, 128),
-        );
         for i in 0..VISIBLE.min(self.maps.len()) {
             let idx = i + self.top;
             let y = list_top + i as f32 * row_h;
-            if self.enabled(idx, c) {
-                r.quad(15.0, y, self.list_width, row_h, srgb_rgba(200, 200, 0, 100));
+            let enabled = self.enabled(idx, c);
+            let tone = match (idx == self.current, enabled) {
+                (true, _) => {
+                    sign::highlight(r, a, [left, y, self.list_width, row_h], 1.0, alpha);
+                    Tone::Selected
+                }
+                (false, true) => Tone::Normal,
+                (false, false) => Tone::Dim,
+            };
+            if enabled {
+                let pulse = 0.85 + 0.15 * (time * 5.0 + idx as f32).sin();
+                r.sprite_whole(
+                    a.glow,
+                    [left - 4.0, y + row_h / 2.0 - 12.0, 24.0, 24.0],
+                    [1.4 * pulse, 0.9 * pulse, 0.25, alpha],
+                );
             }
-            r.text(
-                &a.font_small,
-                &self.maps[idx].name,
-                25.0,
-                118.0 + i as f32 * row_h,
-                col,
+            let name = &self.maps[idx].name;
+            sign::label(
+                r,
+                small,
+                name,
+                left + 24.0,
+                y + 3.0,
                 Align::Left,
+                tone,
+                alpha,
             );
         }
-        if self.top > 0 {
-            r.text(&a.font_small, "+", 128.0, 90.0, col, Align::Center);
-        }
         if self.top + VISIBLE < self.maps.len() {
-            r.text(&a.font_small, "-", 128.0, 391.0, col, Align::Center);
+            let y = list_top + VISIBLE as f32 * row_h - 6.0;
+            sign::label(r, small, "...", more_x, y, Align::Center, Tone::Dim, alpha);
         }
+
+        // A la derecha: nombre, autor y vista previa del mapa con el tema elegido.
+        let map = &self.maps[self.current];
+        let factor = 0.5;
+        let (pw, ph) = (17.0 * 40.0 * factor, 13.0 * 40.0 * factor);
+        let px = right - pw;
+        let cx = px + pw / 2.0;
+        sign::label(
+            r,
+            big,
+            &map.name,
+            cx,
+            top + fh * 1.3,
+            Align::Center,
+            Tone::Selected,
+            alpha,
+        );
+        let by = format!("by {}", map.author);
+        let author_y = top + fh * 2.3;
+        sign::label(
+            r,
+            small,
+            &by,
+            cx,
+            author_y,
+            Align::Center,
+            Tone::Normal,
+            alpha,
+        );
+        let py = author_y + sh + 10.0;
+        // Un hueco oscuro, como si el mapa estuviera hundido en la madera.
+        r.quad(
+            px - 4.0,
+            py - 4.0,
+            pw + 8.0,
+            ph + 8.0,
+            [0.0, 0.0, 0.0, 0.6 * alpha],
+        );
+        let theme = c.theme.clamp(0, 5) as u32;
+        draw_map_preview(r, a, map, theme, px, py, factor, true);
+
+        let too_few = (map.max_players as usize) < c.number_of_players();
+        if too_few {
+            let s = ph.min(pw);
+            r.sprite_whole(
+                a.not_available,
+                [cx - s / 2.0, py, s, s],
+                [1.0, 1.0, 1.0, alpha],
+            );
+        }
+        // Encima de la cruz, para que se lea.
+        if !self.enabled(self.current, c) {
+            r.quad(px, py, pw, ph, [0.0, 0.0, 0.0, 0.55 * alpha]);
+            let y = py + (ph - fh) / 2.0;
+            sign::label(
+                r,
+                big,
+                "Disabled",
+                cx,
+                y,
+                Align::Center,
+                Tone::Normal,
+                alpha,
+            );
+        }
+        let max_text = format!("For up to {} players", map.max_players);
+        let tone = if too_few {
+            Tone::Color([1.0, 0.25, 0.15])
+        } else {
+            Tone::Normal
+        };
+        let players_y = py + ph + 8.0;
+        sign::label(
+            r,
+            small,
+            &max_text,
+            cx,
+            players_y,
+            Align::Center,
+            tone,
+            alpha,
+        );
+
+        // Tema: ←/→ lo cambian, como los valores de los submenús.
+        let theme_y = players_y + sh + 10.0;
+        let theme_name = format!("Theme  « {} »", THEMES[theme as usize]);
+        let (mid, tone) = (left + width / 2.0, Tone::Selected);
+        sign::label(
+            r,
+            big,
+            &theme_name,
+            mid,
+            theme_y,
+            Align::Center,
+            tone,
+            alpha,
+        );
+
+        let hint = "SPACE TOGGLES THE MAP · A ENABLES ALL · S ONLY THIS ONE";
+        let hint_y = top + height - sh;
+        sign::label(
+            r,
+            small,
+            hint,
+            left + width / 2.0,
+            hint_y,
+            Align::Center,
+            Tone::Dim,
+            alpha,
+        );
     }
 }
 

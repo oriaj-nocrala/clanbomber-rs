@@ -952,8 +952,8 @@ pub fn draw_map_preview(
     }
 }
 
-const TEAM_NAMES: [&str; 4] = ["Blood Team", "Gold Team", "Water Team", "Leaf Team"];
-const TEAM_COLORS: [(u8, u8, u8); 4] = [
+pub const TEAM_NAMES: [&str; 4] = ["Blood Team", "Gold Team", "Water Team", "Leaf Team"];
+pub const TEAM_COLORS: [(u8, u8, u8); 4] = [
     (255, 128, 128),
     (255, 255, 0),
     (128, 128, 255),

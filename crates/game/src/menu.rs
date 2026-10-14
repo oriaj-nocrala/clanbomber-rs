@@ -1,11 +1,8 @@
 //! Menú principal en árbol (ClanBomber2: Menu.cpp y la construcción en `ClanBomberApplication::main`).
 
 use cb_core::Config;
-use cb_render::{Align, Renderer};
 use winit::keyboard::KeyCode;
 
-use crate::assets::Assets;
-use crate::draw::{srgb_rgba, text_color};
 use crate::video::Video;
 
 /// Identificador de cada entrada; el programa decide qué hacer con las acciones.
@@ -152,6 +149,18 @@ struct Item {
     parent: Option<usize>,
     children: Vec<usize>,
     kind: Kind,
+}
+
+/// Un submenú tal como se muestra.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Page {
+    pub id: Id,
+    /// Niveles por debajo de la raíz.
+    pub depth: usize,
+    pub title: String,
+    /// Nombre y valor (si es una opción) de cada fila.
+    pub rows: Vec<(String, Option<String>)>,
+    pub selection: usize,
 }
 
 /// Lo que ocurrió tras una pulsación.
@@ -393,6 +402,76 @@ impl Menu {
         self.current == 0
     }
 
+    /// Fila seleccionada en el submenú abierto.
+    #[cfg(test)]
+    fn selection(&self) -> usize {
+        self.selection
+    }
+
+    /// Lo que muestra el submenú abierto: título, filas con su valor y la fila elegida.
+    pub fn page(&self) -> Page {
+        let cur = &self.items[self.current];
+        Page {
+            id: cur.id,
+            depth: self.depth(),
+            title: cur.text.clone(),
+            rows: cur
+                .children
+                .iter()
+                .map(|&i| {
+                    let it = &self.items[i];
+                    let value = match it.kind {
+                        Kind::Value {
+                            min: 0,
+                            max: 1,
+                            value,
+                        } => Some(if value != 0 { "Yes" } else { "No" }.to_owned()),
+                        Kind::Value { value, .. } => Some(value.to_string()),
+                        Kind::Item => None,
+                    };
+                    (it.text.clone(), value)
+                })
+                .collect(),
+            selection: self.selection,
+        }
+    }
+
+    /// Niveles por debajo de la raíz del submenú abierto.
+    fn depth(&self) -> usize {
+        let mut d = 0;
+        let mut i = self.current;
+        while let Some(p) = self.items[i].parent {
+            d += 1;
+            i = p;
+        }
+        d
+    }
+
+    /// La caja de la raíz elegida: la fila en la raíz o, en un submenú, la rama donde está.
+    pub fn root_choice(&self) -> usize {
+        let mut i = self.current;
+        while let Some(p) = self.items[i].parent {
+            if p == 0 {
+                return self.items[0]
+                    .children
+                    .iter()
+                    .position(|&c| c == i)
+                    .unwrap_or(0);
+            }
+            i = p;
+        }
+        self.selection
+    }
+
+    /// Los nombres de las entradas de la raíz (las cajas del tablero).
+    pub fn root_labels(&self) -> Vec<&str> {
+        self.items[0]
+            .children
+            .iter()
+            .map(|&i| self.items[i].text.as_str())
+            .collect()
+    }
+
     /// Vuelve a la raíz con la primera fila seleccionada.
     #[cfg(test)]
     fn reset(&mut self) {
@@ -401,6 +480,12 @@ impl Menu {
     }
 
     pub fn key(&mut self, code: KeyCode) -> Outcome {
+        // En el tablero de la raíz las cajas van en fila: izquierda/derecha también mueven.
+        let code = match code {
+            KeyCode::ArrowLeft if self.at_root() => KeyCode::ArrowUp,
+            KeyCode::ArrowRight if self.at_root() => KeyCode::ArrowDown,
+            c => c,
+        };
         let n = self.items[self.current].children.len();
         let sel = self.items[self.current]
             .children
@@ -436,87 +521,20 @@ impl Menu {
                 }
             }
             KeyCode::Escape => {
+                // Al subir queda seleccionada la entrada de la que se venía.
                 if let Some(parent) = self.items[self.current].parent {
+                    let from = self.current;
                     self.current = parent;
-                    self.selection = 0;
+                    self.selection = self.items[parent]
+                        .children
+                        .iter()
+                        .position(|&c| c == from)
+                        .unwrap_or(0);
                 }
             }
             _ => {}
         }
         Outcome::None
-    }
-
-    /// `Menu::redraw`: panel azul translúcido centrado sobre la pantalla de título.
-    pub fn draw(&self, r: &mut Renderer, a: &Assets) {
-        let col = text_color();
-        let font = &a.font_big;
-        let cur = &self.items[self.current];
-
-        r.fullscreen(a.title_bg);
-
-        let fh = font.line_height().round();
-        let mut width = font.width(&cur.text);
-        for &i in &cur.children {
-            let it = &self.items[i];
-            let mut w = font.width(&it.text);
-            if matches!(it.kind, Kind::Value { .. }) {
-                w += 50.0;
-            }
-            width = width.max(w);
-        }
-        width += 30.0;
-        let height = cur.children.len() as f32 * (fh + 10.0) + fh * 2.0;
-        let (left, right) = (400.0 - width / 2.0, 400.0 + width / 2.0);
-        let mut vert = 300.0 - height / 2.0;
-
-        r.quad(
-            left - 30.0,
-            vert - 10.0,
-            right + 60.0 - left,
-            height + 50.0,
-            srgb_rgba(0, 0, 0xFF, 135),
-        );
-        r.text(font, &cur.text, 400.0, vert, col, Align::Center);
-        vert += fh * 2.0;
-
-        for (row, &i) in cur.children.iter().enumerate() {
-            let it = &self.items[i];
-            if row == self.selection {
-                r.quad(
-                    left - 30.0,
-                    vert - 5.0,
-                    right + 60.0 - left,
-                    fh + 10.0,
-                    srgb_rgba(0, 30, 170, 170),
-                );
-            }
-            match it.kind {
-                Kind::Value { min, max, value } => {
-                    let shown = if min == 0 && max == 1 {
-                        if value != 0 {
-                            "Yes".to_owned()
-                        } else {
-                            "No".to_owned()
-                        }
-                    } else {
-                        value.to_string()
-                    };
-                    r.text(font, &shown, right, vert, col, Align::Right);
-                    r.text(font, &it.text, left, vert, col, Align::Left);
-                }
-                Kind::Item => r.text(font, &it.text, 400.0, vert, col, Align::Center),
-            }
-            vert += fh + 10.0;
-        }
-        let version = format!("V{}", env!("CARGO_PKG_VERSION"));
-        r.text(
-            &a.font_small,
-            &version,
-            right + 20.0,
-            vert + 20.0,
-            col,
-            Align::Right,
-        );
     }
 }
 
@@ -540,6 +558,57 @@ mod tests {
             Outcome::None,
             "vuelve a entrar en New Game"
         );
+    }
+
+    #[test]
+    fn left_and_right_walk_the_root_boxes() {
+        let c = Config::default();
+        let mut m = Menu::new(&c);
+        m.key(KeyCode::ArrowRight);
+        m.key(KeyCode::ArrowRight);
+        assert_eq!(m.selection(), 2);
+        m.key(KeyCode::ArrowLeft);
+        assert_eq!(m.selection(), 1);
+        assert_eq!(m.root_labels()[1], "Options");
+        m.key(KeyCode::Enter); // Options
+        m.key(KeyCode::ArrowDown);
+        m.key(KeyCode::Enter); // Enable/Disable Extras
+        assert_eq!(m.root_choice(), 1, "sigue en la rama de Options");
+    }
+
+    #[test]
+    fn page_shows_values_as_text() {
+        let c = Config::default();
+        let mut m = Menu::new(&c);
+        m.key(KeyCode::Enter); // New Game
+        let p = m.page();
+        assert_eq!(
+            (p.id, p.depth, p.title.as_str()),
+            (Id::NewGame, 1, "New Game")
+        );
+        assert_eq!(p.rows[0], ("Start Local".to_owned(), None));
+        let yes_no = if c.random_positions { "Yes" } else { "No" };
+        assert_eq!(
+            p.rows[3].1.as_deref(),
+            Some(yes_no),
+            "Random Bomber Positions"
+        );
+        assert_eq!(p.rows[6].1.as_deref(), Some("90"), "Round Time");
+    }
+
+    #[test]
+    fn escape_selects_the_submenu_it_came_from() {
+        let c = Config::default();
+        let mut m = Menu::new(&c);
+        m.key(KeyCode::ArrowRight);
+        m.key(KeyCode::Enter); // Options
+        m.key(KeyCode::ArrowDown);
+        m.key(KeyCode::Enter); // Enable/Disable Extras
+        m.key(KeyCode::Escape);
+        assert_eq!(m.selection(), 1, "Enable/Disable Extras");
+        m.key(KeyCode::Escape);
+        assert!(m.at_root());
+        assert_eq!(m.selection(), 1, "Options");
     }
 
     #[test]

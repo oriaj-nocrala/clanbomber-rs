@@ -1,10 +1,14 @@
-//! Pantalla `Help Screen` (ClanBomber2: `show_tutorial`): dos páginas con los extras y las drogas.
+//! Pantalla `Help Screen` (ClanBomber2: `show_tutorial`): dos páginas con los extras y las drogas,
+//! en el letrero de madera sobre el tablero del menú.
 
 use cb_render::{Align, Renderer};
 
 use crate::assets::Assets;
-use crate::draw::{srgb_rgba, text_color};
+use crate::menu_sign::{self as sign, Front, Tone};
 use crate::screen::Flow;
+
+/// Tamaño del letrero.
+pub const PANEL: [f32; 2] = [620.0, 520.0];
 
 /// (índice de sprite en extras2.png, título, líneas de explicación).
 type Entry = (u32, &'static str, &'static [&'static str]);
@@ -53,40 +57,56 @@ impl Help {
         }
     }
 
-    pub fn draw(&self, r: &mut Renderer, a: &Assets) {
-        let col = text_color();
-        r.fullscreen(a.title_bg);
-        r.quad(0.0, 0.0, 800.0, 600.0, srgb_rgba(0, 0, 0, 128));
+    /// La página que se ve (0 o 1): cada una entra girando en el letrero.
+    pub fn page(&self) -> usize {
+        self.page
+    }
+
+    /// El contenido del letrero ya de frente (`menu_sign::Front`).
+    pub fn draw(&self, r: &mut Renderer, a: &Assets, front: &Front) {
+        let alpha = front.alpha;
+        let [left, top, width, height] = sign::inner(front.rect);
+        let (big, small) = (&a.font_big, &a.font_small);
+        let (fh, sh) = (big.line_height().round(), small.line_height().round());
+        let cx = left + width / 2.0;
         let (title, entries) = if self.page == 0 {
             ("ClanBomber Extras", EXTRAS)
         } else {
             ("ClanBomber Drugs", DRUGS)
         };
-        let mut y = 25.0;
-        r.text(&a.font_big, title, 400.0, y, col, Align::Center);
-        y += 80.0;
+        sign::title(r, big, title, cx, top - 6.0, alpha);
+
+        // Cada entrada: el extra, su nombre en dorado y la explicación debajo.
+        let icon = fh * 1.5;
+        let text_x = left + icon + 20.0;
+        let mut y = top + fh * 1.6;
         for (sprite, name, lines) in entries {
-            r.sheet_sprite(&a.extras, *sprite, 15.0, y - 5.0);
-            r.text(&a.font_big, name, 70.0, y, col, Align::Left);
+            r.sprite_tinted(
+                a.extras.tex,
+                a.extras.cell(*sprite),
+                [left + 4.0, y, icon, icon],
+                [1.0, 1.0, 1.0, alpha],
+            );
+            let name = name.trim_end_matches(':');
+            sign::label(
+                r,
+                big,
+                name,
+                text_x,
+                y - 4.0,
+                Align::Left,
+                Tone::Selected,
+                alpha,
+            );
             for (k, line) in lines.iter().enumerate() {
-                r.text(
-                    &a.font_big,
-                    line,
-                    250.0,
-                    y + k as f32 * 40.0,
-                    col,
-                    Align::Left,
-                );
+                let ly = y + fh - 2.0 + k as f32 * sh;
+                sign::label(r, small, line, text_x, ly, Align::Left, Tone::Normal, alpha);
             }
-            y += 50.0;
+            y += fh + lines.len() as f32 * sh + 14.0;
         }
-        r.text(
-            &a.font_big,
-            "Press any key",
-            400.0,
-            520.0,
-            col,
-            Align::Center,
-        );
+
+        let hint = format!("PRESS ANY KEY  ·  {}/2", self.page + 1);
+        let hint_y = top + height - sh;
+        sign::label(r, small, &hint, cx, hint_y, Align::Center, Tone::Dim, alpha);
     }
 }
