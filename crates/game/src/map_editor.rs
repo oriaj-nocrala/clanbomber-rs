@@ -254,11 +254,7 @@ impl MapEditor {
 
     fn draw_select(&self, r: &mut Renderer, a: &Assets) {
         let col = text_color();
-        r.sprite(
-            a.editor_bg,
-            [0.0, 0.0, 800.0, 600.0],
-            [0.0, 0.0, 800.0, 600.0],
-        );
+        r.fullscreen(a.editor_bg);
         let (list_top, row_h) = (116.0, 25.0);
         r.quad(
             45.0,
@@ -394,11 +390,7 @@ impl Editing {
     fn draw(&self, r: &mut Renderer, a: &Assets, c: &Config) {
         let col = text_color();
         let theme = c.theme.clamp(0, 5) as u32;
-        r.sprite(
-            a.editor_bg,
-            [0.0, 0.0, 800.0, 600.0],
-            [0.0, 0.0, 800.0, 600.0],
-        );
+        r.fullscreen(a.editor_bg);
 
         if let Sub::Help = self.sub {
             self.draw_help(r, a, theme);

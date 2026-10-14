@@ -829,11 +829,7 @@ fn draw_scores(
     end_of_game: bool,
 ) {
     let col = text_color();
-    r.sprite(
-        a.status_bg,
-        [0.0, 0.0, 800.0, 600.0],
-        [0.0, 0.0, 800.0, 600.0],
-    );
+    r.fullscreen(a.status_bg);
     r.text(
         &a.font_small,
         "PRESS SPACE TO CONTINUE",

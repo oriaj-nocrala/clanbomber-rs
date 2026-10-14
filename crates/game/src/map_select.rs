@@ -119,11 +119,7 @@ impl MapSelect {
     pub fn draw(&self, r: &mut Renderer, a: &Assets, c: &Config) {
         let col = text_color();
         let map = &self.maps[self.current];
-        r.sprite(
-            a.map_select_bg,
-            [0.0, 0.0, 800.0, 600.0],
-            [0.0, 0.0, 800.0, 600.0],
-        );
+        r.fullscreen(a.map_select_bg);
 
         r.text(&a.font_big, &map.name, 510.0, 50.0, col, Align::Center);
         r.text(

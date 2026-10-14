@@ -145,11 +145,7 @@ impl Credits {
 
     pub fn draw(&self, r: &mut Renderer, a: &Assets) {
         let col = text_color();
-        r.sprite(
-            a.credits_bg,
-            [0.0, 0.0, 800.0, 600.0],
-            [0.0, 0.0, 800.0, 600.0],
-        );
+        r.fullscreen(a.credits_bg);
         let y = self.offset;
         r.sprite(
             a.cb_logo,

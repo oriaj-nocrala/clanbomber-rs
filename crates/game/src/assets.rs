@@ -93,8 +93,16 @@ impl Assets {
                 (t, *h, *o, scale)
             })
             .collect();
-        // El fondo del título HD puede tener cualquier tamaño 4:3 (`Renderer::fullscreen`).
+        // Los fondos HD pueden tener cualquier tamaño 4:3 (`Renderer::fullscreen`).
         let title_hd = load_hd(r, &dir, "clanbomber_title_andi.png");
+        let [status_hd, player_setup_hd, map_select_hd, credits_hd, editor_hd] = [
+            "game_status.png",
+            "playersetup.png",
+            "level_selection.png",
+            "horst_evil.png",
+            "map_editor.png",
+        ]
+        .map(|f| load_hd(r, &dir, f));
         let mut sheet = |name: &str| load_sheet_tex(r, &dir, name);
         let maptiles = sheet("maptiles.png");
         let addons = sheet("maptile_addons.png");
@@ -112,14 +120,12 @@ impl Assets {
                 .unwrap_or_else(|e| panic!("{}: {e}", path.display()))
         };
         let explosion = tex("explosion2.png");
-        let status_bg = tex("game_status.png");
+        let status_bg = status_hd.unwrap_or_else(|| tex("game_status.png"));
         let title_bg = title_hd.unwrap_or_else(|| tex("clanbomber_title_andi.png"));
-        let (player_setup_bg, map_select_bg, credits_bg) = (
-            tex("playersetup.png"),
-            tex("level_selection.png"),
-            tex("horst_evil.png"),
-        );
-        let editor_bg = tex("map_editor.png");
+        let player_setup_bg = player_setup_hd.unwrap_or_else(|| tex("playersetup.png"));
+        let map_select_bg = map_select_hd.unwrap_or_else(|| tex("level_selection.png"));
+        let credits_bg = credits_hd.unwrap_or_else(|| tex("horst_evil.png"));
+        let editor_bg = editor_hd.unwrap_or_else(|| tex("map_editor.png"));
         let (not_available, cb_logo, fl_logo) = (
             tex("not_available.png"),
             tex("cb_logo_small.png"),
