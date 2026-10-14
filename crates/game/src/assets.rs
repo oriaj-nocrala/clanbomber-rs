@@ -40,6 +40,8 @@ pub struct Assets {
     pub not_available: TextureId,
     pub cb_logo: TextureId,
     pub fl_logo: TextureId,
+    /// Disco blanco que se desvanece hacia el borde (halos de luz, llamas).
+    pub glow: TextureId,
     /// DejaVuSans-Bold a 28 y a 18 px (Resources::Font_big / Font_small).
     pub font_big: Font,
     pub font_small: Font,
@@ -102,6 +104,20 @@ impl Assets {
                 .unwrap_or_else(|e| panic!("{}: {e}", path.display()))
         };
 
+        let glow = {
+            const N: u32 = 64;
+            let rgba: Vec<u8> = (0..N * N)
+                .flat_map(|i| {
+                    let (x, y) = ((i % N) as f32 + 0.5, (i / N) as f32 + 0.5);
+                    let d = ((x - N as f32 / 2.0).hypot(y - N as f32 / 2.0) / (N as f32 / 2.0))
+                        .min(1.0);
+                    let a = (1.0 - d * d).powi(2);
+                    [255, 255, 255, (a * 255.0).round() as u8]
+                })
+                .collect();
+            r.load_rgba_smooth(&rgba, N, N)
+        };
+
         let font = |r: &mut Renderer, px: f32| {
             let path = dir.join("fonts/DejaVuSans-Bold.ttf");
             r.load_font(&path, px)
@@ -137,6 +153,7 @@ impl Assets {
             not_available,
             cb_logo,
             fl_logo,
+            glow,
             font_big,
             font_small,
         }

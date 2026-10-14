@@ -393,6 +393,20 @@ impl Menu {
         self.current == 0
     }
 
+    /// Fila seleccionada en el submenú abierto.
+    pub fn selection(&self) -> usize {
+        self.selection
+    }
+
+    /// Los nombres de las entradas del submenú abierto.
+    pub fn labels(&self) -> Vec<&str> {
+        self.items[self.current]
+            .children
+            .iter()
+            .map(|&i| self.items[i].text.as_str())
+            .collect()
+    }
+
     /// Vuelve a la raíz con la primera fila seleccionada.
     #[cfg(test)]
     fn reset(&mut self) {
@@ -401,6 +415,12 @@ impl Menu {
     }
 
     pub fn key(&mut self, code: KeyCode) -> Outcome {
+        // En el tablero de la raíz las cajas van en fila: izquierda/derecha también mueven.
+        let code = match code {
+            KeyCode::ArrowLeft if self.at_root() => KeyCode::ArrowUp,
+            KeyCode::ArrowRight if self.at_root() => KeyCode::ArrowDown,
+            c => c,
+        };
         let n = self.items[self.current].children.len();
         let sel = self.items[self.current]
             .children
@@ -540,6 +560,18 @@ mod tests {
             Outcome::None,
             "vuelve a entrar en New Game"
         );
+    }
+
+    #[test]
+    fn left_and_right_walk_the_root_boxes() {
+        let c = Config::default();
+        let mut m = Menu::new(&c);
+        m.key(KeyCode::ArrowRight);
+        m.key(KeyCode::ArrowRight);
+        assert_eq!(m.selection(), 2);
+        m.key(KeyCode::ArrowLeft);
+        assert_eq!(m.selection(), 1);
+        assert_eq!(m.labels()[1], "Options");
     }
 
     #[test]

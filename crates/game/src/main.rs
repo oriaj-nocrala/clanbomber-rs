@@ -15,6 +15,7 @@ mod lighting;
 mod map_editor;
 mod map_select;
 mod menu;
+mod menu_board;
 mod paths;
 mod player_setup;
 mod screen;
@@ -109,6 +110,8 @@ struct App {
     video: Video,
     video_path: Option<PathBuf>,
     menu: Menu,
+    /// El menú raíz como tablero 3D.
+    board: menu_board::Board,
     world: Option<World>,
     players: Vec<Player>,
     /// Qué gobierna a cada bomber del mundo.
@@ -377,6 +380,7 @@ impl App {
             (_, KeyCode::ArrowUp | KeyCode::ArrowDown) | (Outcome::Changed(..), _) => {
                 self.audio.play(Sfx::Break)
             }
+            (_, KeyCode::ArrowLeft | KeyCode::ArrowRight) if at_root => self.audio.play(Sfx::Break),
             // Entrar en un submenú o volver a uno superior.
             (Outcome::None, KeyCode::Enter | KeyCode::NumpadEnter) => self.audio.play(Sfx::Clear),
             (Outcome::None, KeyCode::Escape) if !at_root => self.audio.play(Sfx::Clear),
@@ -611,6 +615,12 @@ impl ApplicationHandler for App {
                             self.screen = Screen::Menu;
                         }
                     }
+                    Screen::Menu => {
+                        self.acc = 0.0;
+                        if let Some((_, r)) = self.gfx.as_mut().filter(|_| self.menu.at_root()) {
+                            self.board.update(r, frame as f32, self.menu.selection());
+                        }
+                    }
                     _ => self.acc = 0.0,
                 }
                 if !matches!(self.screen, Screen::Game) {
@@ -664,6 +674,18 @@ impl ApplicationHandler for App {
                             s.draw(r, a);
                             r.render();
                         }
+                        _ if self.menu.at_root() => {
+                            let skin = self.config.bombers.first().map_or(0, |b| b.skin as usize);
+                            self.board.draw(
+                                r,
+                                a,
+                                &self.menu.labels(),
+                                self.menu.selection(),
+                                self.config.theme.clamp(0, 5) as u32,
+                                skin,
+                            );
+                            r.render();
+                        }
                         _ => {
                             self.menu.draw(r, a);
                             r.render();
@@ -711,6 +733,7 @@ fn main() {
         video,
         video_path,
         menu,
+        board: menu_board::Board::new(0),
         world: None,
         players: Vec::new(),
         controls: Vec::new(),

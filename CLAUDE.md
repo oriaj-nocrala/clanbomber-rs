@@ -36,6 +36,9 @@ cargo fmt
   reflejo (`sprite_reflection`: invertido y recortado a las casillas de hielo) y quemar/revelar
   (`sprite_burn`/`sprite_reveal`: el avance va en los 16 bits altos del modo y el centro en el color)
   y el cronómetro del HUD dibujado entero por SDF (`Renderer::stopwatch`, con "Sprite Effects").
+  `board3d.rs`/`board3d.wgsl`: escena 3D (cubos con textura en perspectiva, depth propio y luces
+  puntuales; `Renderer::cube`, `set_view3d`, `light3d`). Los lotes 3D seguidos van en su propia pasada
+  dentro de `record_scene`; los sprites encima se proyectan con `View3d::project`.
   `light.rs`/`light.wgsl`: iluminación dinámica multiplicativa con sombras (raymarch sobre la rejilla de
   muros/cajas, `Renderer::light` + `Renderer::lighting`). `fire.rs`/`fire.wgsl`: explosiones
   procedurales (cruz por SDF + fbm, grosor según la potencia; `Renderer::fire`), intercaladas con los sprites. Sin compute shaders (GL antiguo) se
@@ -63,7 +66,8 @@ cargo fmt
   luces (fuego, bombas que laten, halos de bombers, extras); `shards.rs` simula en CPU los trozos con textura (cajas y
   extras quemados, con altura falsa y rebote) y el "pop" de los extras recogidos, en `video.txt` aparte de `Config` para no
   entrar en `World::state_hash`; `audio.rs` (efectos y música; el núcleo solo emite `GameEvent`); `menu.rs` es el menú en árbol
-  (opciones de `Config`, guardadas al cambiar); `intro.rs`, `player_setup.rs`, `map_select.rs`, `map_editor.rs`, `credits.rs` y `help.rs`
+  (opciones de `Config`, guardadas al cambiar; la raíz se dibuja como tablero 3D en `menu_board.rs`, ver
+  `docs/menu-3d.md`); `intro.rs`, `player_setup.rs`, `map_select.rs`, `map_editor.rs`, `credits.rs` y `help.rs`
   son las demás pantallas de menú (`screen.rs`: `Flow` y `TextEdit`). Pantallas: menú ⇄ partida (Esc vuelve al menú; Espacio pasa
   del marcador a la siguiente ronda).
 - `assets/maps`: copiados del fork de referencia (ver abajo). `assets/pics`: las imágenes del
