@@ -45,6 +45,19 @@ pub struct Assets {
     pub font_small: Font,
 }
 
+/// Las hojas redibujadas con IA tienen 4 texels por píxel virtual.
+const HD_SCALE: f32 = 4.0;
+
+/// Versión redibujada con IA de `name` (`<nombre>_hd.png`), con filtrado bilineal porque casi
+/// siempre se dibuja más pequeña que la textura. `None` si no existe o con CB_SD=1 (originales).
+fn load_hd(r: &mut Renderer, dir: &std::path::Path, name: &str) -> Option<TextureId> {
+    if std::env::var_os("CB_SD").is_some() {
+        return None;
+    }
+    let path = dir.join("pics").join(name.replace(".png", "_hd.png"));
+    r.load_texture_smooth(path).ok()
+}
+
 impl Assets {
     pub fn load(r: &mut Renderer) -> Assets {
         let dir = crate::paths::assets_dir();
@@ -59,42 +72,33 @@ impl Assets {
             ("bomber_dull_yellow.png", 40.0, 40.0),
             ("bomber_dull_green.png", 40.0, 40.0),
         ];
-        // Versiones reescaladas por IA (`<nombre>_hd.png`, 4x, filtrado bilineal porque casi
-        // siempre se dibujan más pequeñas que la textura). CB_SD=1 fuerza las originales.
-        const HD_SCALE: f32 = 4.0;
-        let use_hd = std::env::var_os("CB_SD").is_none();
         let skin_tex: Vec<_> = skin_files
             .iter()
-            .map(|(f, h, o)| {
-                let hd = dir.join("pics").join(f.replace(".png", "_hd.png"));
-                match use_hd.then(|| r.load_texture_smooth(&hd).ok()).flatten() {
-                    Some(t) => (t, *h, *o, HD_SCALE),
-                    None => {
-                        let path = dir.join("pics").join(f);
-                        let t = r
-                            .load_texture(&path)
-                            .unwrap_or_else(|e| panic!("{}: {e}", path.display()));
-                        (t, *h, *o, 1.0)
-                    }
+            .map(|(f, h, o)| match load_hd(r, &dir, f) {
+                Some(t) => (t, *h, *o, HD_SCALE),
+                None => {
+                    let path = dir.join("pics").join(f);
+                    let t = r
+                        .load_texture(&path)
+                        .unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+                    (t, *h, *o, 1.0)
                 }
             })
             .collect();
-        // Fondo del título redibujado con IA (cualquier tamaño 4:3, bilineal); si falta o con
-        // CB_SD=1, el original.
-        let title_hd = use_hd
-            .then(|| {
-                r.load_texture_smooth(dir.join("pics/clanbomber_title_hd.png"))
-                    .ok()
-            })
-            .flatten();
+        // El fondo del título HD puede tener cualquier tamaño 4:3 (`Renderer::fullscreen`).
+        let title_hd = load_hd(r, &dir, "clanbomber_title_andi.png");
+        let bombs_hd = load_hd(r, &dir, "bombs.png");
         let mut tex = |name: &str| {
             let path = dir.join("pics").join(name);
             r.load_texture(&path)
                 .unwrap_or_else(|e| panic!("{}: {e}", path.display()))
         };
         let (maptiles, addons) = (tex("maptiles.png"), tex("maptile_addons.png"));
-        let (bombs, explosion, extras) =
-            (tex("bombs.png"), tex("explosion2.png"), tex("extras2.png"));
+        let bombs = match bombs_hd {
+            Some(t) => (t, HD_SCALE),
+            None => (tex("bombs.png"), 1.0),
+        };
+        let (explosion, extras) = (tex("explosion2.png"), tex("extras2.png"));
         let (observer, cup) = (tex("observer.png"), tex("cup2.png"));
         let corpse_parts = tex("corpse_parts.png");
         let status_bg = tex("game_status.png");
@@ -123,7 +127,7 @@ impl Assets {
         Assets {
             maptiles: r.sheet(maptiles, 40.0, 40.0),
             addons: r.sheet(addons, 40.0, 40.0),
-            bombs: r.sheet(bombs, 40.0, 40.0),
+            bombs: r.sheet_scaled(bombs.0, 40.0, 40.0, bombs.1),
             explosion: r.sheet(explosion, 40.0, 40.0),
             extras: r.sheet(extras, 40.0, 40.0),
             skins: skin_tex
