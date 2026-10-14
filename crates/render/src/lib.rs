@@ -103,6 +103,8 @@ pub struct Renderer {
     sampler: wgpu::Sampler,
     /// Bilineal: para los campos de distancias del texto.
     smooth_sampler: wgpu::Sampler,
+    /// Trilineal: texturas con mipmaps (las caras de la escena 3D, que se ven muy reducidas).
+    mip_sampler: wgpu::Sampler,
     textures: Vec<Texture>,
     batches: Vec<Batch>,
     fire: fire::FirePipeline,
@@ -217,6 +219,12 @@ impl Renderer {
             min_filter: wgpu::FilterMode::Linear,
             ..Default::default()
         });
+        let mip_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            mipmap_filter: wgpu::MipmapFilterMode::Linear,
+            ..Default::default()
+        });
         let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: None,
             bind_group_layouts: &[Some(&bgl), Some(&tex_layout)],
@@ -289,6 +297,7 @@ impl Renderer {
             tex_layout,
             sampler,
             smooth_sampler,
+            mip_sampler,
             textures: Vec::new(),
             batches: Vec::new(),
             fire,
@@ -336,16 +345,48 @@ impl Renderer {
         Ok(self.upload(&img, w, h, true))
     }
 
+    /// Como [`load_texture_smooth`](Self::load_texture_smooth) pero con hasta `levels` niveles
+    /// de mipmaps (cada uno la mitad del anterior), para texturas que se dibujan mucho más chicas.
+    /// Con hojas de celdas, elegir `levels` para que cada celda siga cayendo en texels enteros
+    /// (160 texels → 5 niveles: 160, 80, 40, 20, 10) y no se mezclen celdas vecinas.
+    pub fn load_texture_mipmapped(
+        &mut self,
+        path: impl AsRef<std::path::Path>,
+        levels: u32,
+    ) -> Result<TextureId, image::ImageError> {
+        let img = image::open(path)?.to_rgba8();
+        let (w, h) = img.dimensions();
+        let (mips, levels) = mip_chain(img.into_raw(), w, h, levels);
+        Ok(self.upload_levels(&mips, w, h, levels, Filter::Mipmapped))
+    }
+
     pub fn load_rgba(&mut self, rgba: &[u8], w: u32, h: u32) -> TextureId {
-        self.upload(rgba, w, h, false)
+        self.upload_levels(rgba, w, h, 1, Filter::Nearest)
     }
 
     /// Como [`load_rgba`](Self::load_rgba) pero con filtrado bilineal (no es pixel art).
     pub fn load_rgba_smooth(&mut self, rgba: &[u8], w: u32, h: u32) -> TextureId {
-        self.upload(rgba, w, h, true)
+        self.upload_levels(rgba, w, h, 1, Filter::Smooth)
     }
 
     fn upload(&mut self, rgba: &[u8], w: u32, h: u32, smooth: bool) -> TextureId {
+        let filter = if smooth {
+            Filter::Smooth
+        } else {
+            Filter::Nearest
+        };
+        self.upload_levels(rgba, w, h, 1, filter)
+    }
+
+    /// `data`: los `levels` niveles seguidos, del más grande al más chico.
+    fn upload_levels(
+        &mut self,
+        data: &[u8],
+        w: u32,
+        h: u32,
+        levels: u32,
+        filter: Filter,
+    ) -> TextureId {
         let tex = self.device.create_texture_with_data(
             &self.queue,
             &wgpu::TextureDescriptor {
@@ -355,7 +396,7 @@ impl Renderer {
                     height: h,
                     depth_or_array_layers: 1,
                 },
-                mip_level_count: 1,
+                mip_level_count: levels,
                 sample_count: 1,
                 dimension: wgpu::TextureDimension::D2,
                 format: wgpu::TextureFormat::Rgba8UnormSrgb,
@@ -363,7 +404,7 @@ impl Renderer {
                 view_formats: &[],
             },
             wgpu::util::TextureDataOrder::LayerMajor,
-            rgba,
+            data,
         );
         let view = tex.create_view(&Default::default());
         let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -376,10 +417,10 @@ impl Renderer {
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
-                    resource: wgpu::BindingResource::Sampler(if smooth {
-                        &self.smooth_sampler
-                    } else {
-                        &self.sampler
+                    resource: wgpu::BindingResource::Sampler(match filter {
+                        Filter::Nearest => &self.sampler,
+                        Filter::Smooth => &self.smooth_sampler,
+                        Filter::Mipmapped => &self.mip_sampler,
                     }),
                 },
             ],
@@ -1112,6 +1153,62 @@ impl Renderer {
     }
 }
 
+#[derive(Clone, Copy)]
+enum Filter {
+    Nearest,
+    Smooth,
+    Mipmapped,
+}
+
+/// Niveles de mipmaps de una imagen RGBA sRGB: cada uno promedia bloques de 2x2 del anterior en
+/// espacio lineal (promediar los valores sRGB oscurece). Se para antes de `levels` si un lado
+/// deja de ser par. Devuelve los niveles seguidos y cuántos son.
+fn mip_chain(mut data: Vec<u8>, w: u32, h: u32, levels: u32) -> (Vec<u8>, u32) {
+    let to_linear: Vec<f32> = (0..256)
+        .map(|i| {
+            let c = i as f32 / 255.0;
+            if c <= 0.04045 {
+                c / 12.92
+            } else {
+                ((c + 0.055) / 1.055).powf(2.4)
+            }
+        })
+        .collect();
+    let to_srgb = |l: f32| {
+        let c = if l <= 0.003_130_8 {
+            l * 12.92
+        } else {
+            1.055 * l.powf(1.0 / 2.4) - 0.055
+        };
+        (c * 255.0).round().clamp(0.0, 255.0) as u8
+    };
+    let (mut lw, mut lh, mut start, mut made) = (w as usize, h as usize, 0, 1);
+    while made < levels.max(1) && lw % 2 == 0 && lh % 2 == 0 {
+        let (nw, nh) = (lw / 2, lh / 2);
+        let mut next = Vec::with_capacity(nw * nh * 4);
+        for y in 0..nh {
+            for x in 0..nw {
+                let px = |dx: usize, dy: usize| start + ((2 * y + dy) * lw + 2 * x + dx) * 4;
+                let quad = [px(0, 0), px(1, 0), px(0, 1), px(1, 1)];
+                // Color ponderado por alfa, para que los bordes transparentes no ensucien.
+                let alpha: f32 = quad.iter().map(|&i| data[i + 3] as f32).sum();
+                for c in 0..3 {
+                    let sum: f32 = quad
+                        .iter()
+                        .map(|&i| to_linear[data[i + c] as usize] * data[i + 3] as f32)
+                        .sum();
+                    next.push(if alpha > 0.0 { to_srgb(sum / alpha) } else { 0 });
+                }
+                next.push((alpha / 4.0).round() as u8);
+            }
+        }
+        start = data.len();
+        data.extend(next);
+        (lw, lh, made) = (nw, nh, made + 1);
+    }
+    (data, made)
+}
+
 /// Avance 0..1 en los 16 bits altos del modo del vértice (`quad.wgsl`).
 fn progress_bits(progress: f32) -> u32 {
     let p = if progress.is_finite() {
@@ -1142,7 +1239,21 @@ fn letterbox(w: u32, h: u32) -> ([f32; 4], (u32, u32)) {
 
 #[cfg(test)]
 mod tests {
-    use super::reflection_fade;
+    use super::{mip_chain, reflection_fade};
+
+    #[test]
+    fn mip_chain_halves_until_odd() {
+        // 4x2 → 2x1 y para (1 es impar), aunque se pidan más niveles.
+        let mut img = vec![255u8; 4 * 2 * 4];
+        img[0..4].copy_from_slice(&[0, 0, 0, 255]);
+        let (data, levels) = mip_chain(img, 4, 2, 5);
+        assert_eq!(levels, 2);
+        assert_eq!(data.len(), (4 * 2 + 2) * 4);
+        // Negro y tres blancos promediados en lineal: más claro que el promedio sRGB (191).
+        let p = &data[32..36];
+        assert!(p[0] > 191 && p[0] < 255 && p[3] == 255, "{p:?}");
+        assert_eq!(&data[36..40], &[255; 4]);
+    }
 
     #[test]
     fn reflection_fade_never_nan() {

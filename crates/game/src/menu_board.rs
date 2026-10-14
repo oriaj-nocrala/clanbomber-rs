@@ -200,7 +200,7 @@ impl Board {
             color: [4.5 * f, 2.6 * f, 0.9 * f],
         });
 
-        let tiles = &a.maptiles;
+        let tiles = &a.maptiles_3d;
         let cell = |n: u32| tiles.cell(theme * 4 + n);
         let cube = |min: [f32; 3], size: [f32; 3], top, side, tint: [f32; 3], ao, faces| Cube {
             tex: tiles.tex,

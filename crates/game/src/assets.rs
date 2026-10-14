@@ -10,6 +10,8 @@ pub struct Skin {
 
 pub struct Assets {
     pub maptiles: Sheet,
+    /// La misma hoja con mipmaps, para el tablero 3D del menú (se ve muy reducida y en ángulo).
+    pub maptiles_3d: Sheet,
     pub addons: Sheet,
     /// Los 8 aspectos, en el orden de `Resources::Bombers`.
     pub skins: Vec<Skin>,
@@ -76,6 +78,12 @@ impl Assets {
             .iter()
             .map(|(f, h, o)| (load_pic(r, &dir, f), *h, *o))
             .collect();
+        // Celdas de 160 texels: 5 niveles (hasta 10) para no mezclar celdas vecinas.
+        let maptiles_3d = {
+            let path = dir.join("pics/maptiles.png");
+            r.load_texture_mipmapped(&path, 5)
+                .unwrap_or_else(|e| panic!("{}: {e}", path.display()))
+        };
         let mut pic = |name: &str| load_pic(r, &dir, name);
         let maptiles = pic("maptiles.png");
         let addons = pic("maptile_addons.png");
@@ -127,6 +135,7 @@ impl Assets {
 
         Assets {
             maptiles: r.sheet_scaled(maptiles, 40.0, 40.0, SCALE),
+            maptiles_3d: r.sheet_scaled(maptiles_3d, 40.0, 40.0, SCALE),
             addons: r.sheet_scaled(addons, 40.0, 40.0, SCALE),
             bombs: r.sheet_scaled(bombs, 40.0, 40.0, SCALE),
             explosion: r.sheet_scaled(explosion, 40.0, 40.0, SCALE),
