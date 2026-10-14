@@ -45,17 +45,20 @@ pub struct Assets {
     pub font_small: Font,
 }
 
+/// Las hojas están redibujadas con IA a 4 texels por píxel virtual (`tools/sprites`).
+const SCALE: f32 = 4.0;
+
+/// Una imagen de `assets/pics`, con filtrado bilineal porque casi siempre se dibuja más pequeña
+/// que la textura.
+fn load_pic(r: &mut Renderer, dir: &std::path::Path, name: &str) -> TextureId {
+    let path = dir.join("pics").join(name);
+    r.load_texture_smooth(&path)
+        .unwrap_or_else(|e| panic!("{}: {e}", path.display()))
+}
+
 impl Assets {
     pub fn load(r: &mut Renderer) -> Assets {
         let dir = crate::paths::assets_dir();
-        let mut tex = |name: &str| {
-            let path = dir.join("pics").join(name);
-            r.load_texture(&path)
-                .unwrap_or_else(|e| panic!("{}: {e}", path.display()))
-        };
-        let (maptiles, addons) = (tex("maptiles.png"), tex("maptile_addons.png"));
-        let (bombs, explosion, extras) =
-            (tex("bombs.png"), tex("explosion2.png"), tex("extras2.png"));
         // (archivo, alto de celda, offset_y): los de 60 px de alto se dibujan a y + 11.
         let skin_files = [
             ("bomber_snake.png", 60.0, 11.0),
@@ -69,24 +72,35 @@ impl Assets {
         ];
         let skin_tex: Vec<_> = skin_files
             .iter()
-            .map(|(f, h, o)| (tex(f), *h, *o))
+            .map(|(f, h, o)| (load_pic(r, &dir, f), *h, *o))
             .collect();
-        let (observer, cup) = (tex("observer.png"), tex("cup2.png"));
-        let corpse_parts = tex("corpse_parts.png");
-        let (status_bg, title_bg) = (tex("game_status.png"), tex("clanbomber_title_andi.png"));
-        let (player_setup_bg, map_select_bg, credits_bg) = (
-            tex("playersetup.png"),
-            tex("level_selection.png"),
-            tex("horst_evil.png"),
-        );
-        let editor_bg = tex("map_editor.png");
-        let (ps_teams, ps_controls) = (tex("ps_teams.png"), tex("ps_controls.png"));
-        let team_lamps = tex("ps_teamlamps.png");
-        let (not_available, cb_logo, fl_logo) = (
-            tex("not_available.png"),
-            tex("cb_logo_small.png"),
-            tex("fischlustig_logo.png"),
-        );
+        let mut pic = |name: &str| load_pic(r, &dir, name);
+        let maptiles = pic("maptiles.png");
+        let addons = pic("maptile_addons.png");
+        let bombs = pic("bombs.png");
+        let extras = pic("extras2.png");
+        let observer = pic("observer.png");
+        let cup = pic("cup2.png");
+        let corpse_parts = pic("corpse_parts.png");
+        let ps_teams = pic("ps_teams.png");
+        let team_lamps = pic("ps_teamlamps.png");
+        let ps_controls = pic("ps_controls.png");
+        let explosion = pic("explosion2.png");
+        // Los fondos pueden tener cualquier tamaño 4:3 (`Renderer::fullscreen`).
+        let status_bg = pic("game_status.png");
+        let title_bg = pic("clanbomber_title_andi.png");
+        let player_setup_bg = pic("playersetup.png");
+        let map_select_bg = pic("level_selection.png");
+        let credits_bg = pic("horst_evil.png");
+        let editor_bg = pic("map_editor.png");
+        let not_available = pic("not_available.png");
+        let cb_logo = pic("cb_logo_small.png");
+        // El logo de Fischlustig (los autores del original) se queda como era, sin filtrar.
+        let fl_logo = {
+            let path = dir.join("pics/fischlustig_logo.png");
+            r.load_texture(&path)
+                .unwrap_or_else(|e| panic!("{}: {e}", path.display()))
+        };
 
         let font = |r: &mut Renderer, px: f32| {
             let path = dir.join("fonts/DejaVuSans-Bold.ttf");
@@ -96,30 +110,30 @@ impl Assets {
         let (font_big, font_small) = (font(r, 28.0), font(r, 18.0));
 
         Assets {
-            maptiles: r.sheet(maptiles, 40.0, 40.0),
-            addons: r.sheet(addons, 40.0, 40.0),
-            bombs: r.sheet(bombs, 40.0, 40.0),
-            explosion: r.sheet(explosion, 40.0, 40.0),
-            extras: r.sheet(extras, 40.0, 40.0),
+            maptiles: r.sheet_scaled(maptiles, 40.0, 40.0, SCALE),
+            addons: r.sheet_scaled(addons, 40.0, 40.0, SCALE),
+            bombs: r.sheet_scaled(bombs, 40.0, 40.0, SCALE),
+            explosion: r.sheet_scaled(explosion, 40.0, 40.0, SCALE),
+            extras: r.sheet_scaled(extras, 40.0, 40.0, SCALE),
             skins: skin_tex
                 .into_iter()
                 .map(|(t, h, o)| Skin {
-                    sheet: r.sheet(t, 40.0, h),
+                    sheet: r.sheet_scaled(t, 40.0, h, SCALE),
                     offset_y: o,
                 })
                 .collect(),
-            observer: r.sheet(observer, 40.0, 40.0),
-            cup: r.sheet(cup, 40.0, 40.0),
-            corpse_parts: r.sheet(corpse_parts, 40.0, 40.0),
+            observer: r.sheet_scaled(observer, 40.0, 40.0, SCALE),
+            cup: r.sheet_scaled(cup, 40.0, 40.0, SCALE),
+            corpse_parts: r.sheet_scaled(corpse_parts, 40.0, 40.0, SCALE),
             status_bg,
             title_bg,
             player_setup_bg,
             map_select_bg,
             credits_bg,
             editor_bg,
-            ps_teams: r.sheet(ps_teams, 125.0, 56.0),
-            ps_controls: r.sheet(ps_controls, 125.0, 56.0),
-            team_lamps: r.sheet(team_lamps, 30.0, 32.0),
+            ps_teams: r.sheet_scaled(ps_teams, 125.0, 56.0, SCALE),
+            ps_controls: r.sheet_scaled(ps_controls, 125.0, 56.0, SCALE),
+            team_lamps: r.sheet_scaled(team_lamps, 30.0, 32.0, SCALE),
             not_available,
             cb_logo,
             fl_logo,

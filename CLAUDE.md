@@ -66,7 +66,10 @@ cargo fmt
   (opciones de `Config`, guardadas al cambiar); `intro.rs`, `player_setup.rs`, `map_select.rs`, `map_editor.rs`, `credits.rs` y `help.rs`
   son las demás pantallas de menú (`screen.rs`: `Flow` y `TextEdit`). Pantallas: menú ⇄ partida (Esc vuelve al menú; Espacio pasa
   del marcador a la siguiente ronda).
-- `assets/maps`, `assets/pics`: copiados del fork de referencia (ver abajo).
+- `assets/maps`: copiados del fork de referencia (ver abajo). `assets/pics`: las imágenes del
+  original redibujadas con IA a 4 texels por píxel virtual (`assets.rs::SCALE`; los originales de
+  40 px quedan en la historia, commit 3af9c68); los scripts para hacerlas están en
+  `tools/sprites` (ver su README).
 
 ## Referencia: el original
 
@@ -129,4 +132,4 @@ enum (`CurrentSurfaceTexture`), `VertexState.buffers` es `&[Option<_>]`, `bind_g
    música Ogg en bucle; F2 la activa, P pausa), cadáveres, trozos, sangre en los créditos y
    temblor de explosiones. Equipos hechos (rondas por equipo, marcador de equipos, la IA no vuela a compañeros). Mandos hechos (gilrs: stick o cruceta + botón A).
    No se portaron a propósito la segunda IA (AI_mass) ni el controlador de ratón (RCMOUSE).
-6. ~~Partículas (compute)~~, bloom y CRT hechos (Options → Graphic Options). Pendiente: sprites con IA.
+6. ~~Partículas (compute)~~, bloom y CRT hechos (Options → Graphic Options). ~~Sprites con IA~~ (todos menos el logo de Fischlustig).

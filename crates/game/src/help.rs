@@ -55,11 +55,7 @@ impl Help {
 
     pub fn draw(&self, r: &mut Renderer, a: &Assets) {
         let col = text_color();
-        r.sprite(
-            a.title_bg,
-            [0.0, 0.0, 800.0, 600.0],
-            [0.0, 0.0, 800.0, 600.0],
-        );
+        r.fullscreen(a.title_bg);
         r.quad(0.0, 0.0, 800.0, 600.0, srgb_rgba(0, 0, 0, 128));
         let (title, entries) = if self.page == 0 {
             ("ClanBomber Extras", EXTRAS)

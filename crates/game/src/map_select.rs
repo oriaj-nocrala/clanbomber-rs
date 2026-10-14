@@ -119,11 +119,7 @@ impl MapSelect {
     pub fn draw(&self, r: &mut Renderer, a: &Assets, c: &Config) {
         let col = text_color();
         let map = &self.maps[self.current];
-        r.sprite(
-            a.map_select_bg,
-            [0.0, 0.0, 800.0, 600.0],
-            [0.0, 0.0, 800.0, 600.0],
-        );
+        r.fullscreen(a.map_select_bg);
 
         r.text(&a.font_big, &map.name, 510.0, 50.0, col, Align::Center);
         r.text(
@@ -193,11 +189,7 @@ impl MapSelect {
 
         let max_text = format!("THIS MAP IS ONLY FOR UP TO {} PLAYERS", map.max_players);
         if (map.max_players as usize) < c.number_of_players() {
-            r.sprite(
-                a.not_available,
-                [0.0, 0.0, 256.0, 256.0],
-                [402.0, 128.0, 256.0, 256.0],
-            );
+            r.sprite_whole(a.not_available, [402.0, 128.0, 256.0, 256.0], [1.0; 4]);
             r.quad(200.0, 494.0, 400.0, 27.0, srgb_rgba(255, 0, 0, 128));
         }
         r.text(&a.font_small, &max_text, 400.0, 500.0, col, Align::Center);

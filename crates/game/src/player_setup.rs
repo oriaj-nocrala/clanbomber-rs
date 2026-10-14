@@ -112,11 +112,7 @@ impl PlayerSetup {
     pub fn draw(&self, r: &mut Renderer, a: &Assets, c: &Config, time: f32) {
         let col = text_color();
         let editing = self.edit.is_some();
-        r.sprite(
-            a.player_setup_bg,
-            [0.0, 0.0, 800.0, 600.0],
-            [0.0, 0.0, 800.0, 600.0],
-        );
+        r.fullscreen(a.player_setup_bg);
         r.text(&a.font_small, "SKIN", 55.0, 40.0, col, Align::Center);
         r.text(&a.font_small, "NAME", 130.0, 40.0, col, Align::Center);
         r.text(&a.font_small, "TEAM", 418.0, 40.0, col, Align::Center);

@@ -452,11 +452,7 @@ impl Menu {
         let font = &a.font_big;
         let cur = &self.items[self.current];
 
-        r.sprite(
-            a.title_bg,
-            [0.0, 0.0, 800.0, 600.0],
-            [0.0, 0.0, 800.0, 600.0],
-        );
+        r.fullscreen(a.title_bg);
 
         let fh = font.line_height().round();
         let mut width = font.width(&cur.text);

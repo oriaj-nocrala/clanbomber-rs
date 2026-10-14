@@ -145,32 +145,15 @@ impl Credits {
 
     pub fn draw(&self, r: &mut Renderer, a: &Assets) {
         let col = text_color();
-        r.sprite(
-            a.credits_bg,
-            [0.0, 0.0, 800.0, 600.0],
-            [0.0, 0.0, 800.0, 600.0],
-        );
+        r.fullscreen(a.credits_bg);
         let y = self.offset;
-        r.sprite(
-            a.cb_logo,
-            [0.0, 0.0, 146.0, 40.0],
-            [10.0, y + 10.0, 146.0, 40.0],
-        );
-        r.sprite(
-            a.cb_logo,
-            [0.0, 0.0, 146.0, 40.0],
-            [640.0, y + 10.0, 146.0, 40.0],
-        );
-        r.sprite(
-            a.fl_logo,
-            [0.0, 0.0, 600.0, 106.0],
-            [
-                100.0,
-                y + LINES.len() as f32 * TEXT_HEIGHT + 130.0,
-                600.0,
-                106.0,
-            ],
-        );
+        // 146 px de ancho como el original; el alto, según la proporción del logo (el HD es más alto).
+        let (lw, lh) = r.texture_size(a.cb_logo);
+        let logo_h = 146.0 * lh / lw;
+        r.sprite_whole(a.cb_logo, [10.0, y + 10.0, 146.0, logo_h], [1.0; 4]);
+        r.sprite_whole(a.cb_logo, [640.0, y + 10.0, 146.0, logo_h], [1.0; 4]);
+        let fl_y = y + LINES.len() as f32 * TEXT_HEIGHT + 130.0;
+        r.sprite_whole(a.fl_logo, [100.0, fl_y, 600.0, 106.0], [1.0; 4]);
         for (i, line) in LINES.iter().enumerate() {
             r.text(
                 &a.font_big,
