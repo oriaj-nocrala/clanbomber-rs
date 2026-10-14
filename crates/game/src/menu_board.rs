@@ -96,6 +96,8 @@ pub struct Look {
     pub fire_shader: bool,
     pub shockwaves: bool,
     pub shake: bool,
+    /// Los nombres sobre las cajas (no detrás del letrero de un submenú).
+    pub labels: bool,
 }
 
 fn smoothstep(x: f32) -> f32 {
@@ -302,9 +304,8 @@ impl Board {
     /// Cuánto se zambulló la cámara hacia la caja que estalló (0 = nada, 1 = dentro).
     fn dive(&self) -> Option<(usize, f32)> {
         match self.stage {
+            // Tras el destello, el submenú se ve sobre el tablero desde la cámara de siempre.
             Stage::Boom { at, t } => Some((at, smoothstep((t - 0.12) / (BOOM - 0.12)))),
-            Stage::Open { at, .. } => Some((at, 1.0)),
-            Stage::Return { at, t } => Some((at, 1.0 - smoothstep(t / RETURN))),
             _ => None,
         }
     }
@@ -328,7 +329,6 @@ impl Board {
     fn flash(&self) -> f32 {
         match self.stage {
             Stage::Boom { t, .. } => smoothstep((t - 0.3) / (BOOM - 0.3)),
-            Stage::Return { t, .. } => 1.0 - smoothstep(t / 0.3),
             _ => 0.0,
         }
     }
@@ -655,7 +655,9 @@ impl Board {
         self.draw_torch_glow(r, a, &v);
         self.draw_bomber(r, a, &v, skin);
         self.draw_blast(r, a, &v, look);
-        self.draw_labels(r, a, &v, labels, selection);
+        if look.labels {
+            self.draw_labels(r, a, &v, labels, selection);
+        }
         r.particle_layer();
         let version = format!("v{}", env!("CARGO_PKG_VERSION"));
         r.text(

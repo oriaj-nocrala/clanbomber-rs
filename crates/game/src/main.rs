@@ -16,6 +16,7 @@ mod map_editor;
 mod map_select;
 mod menu;
 mod menu_board;
+mod menu_sign;
 mod paths;
 mod player_setup;
 mod screen;
@@ -112,6 +113,8 @@ struct App {
     menu: Menu,
     /// El menú raíz como tablero 3D.
     board: menu_board::Board,
+    /// Los submenús como letreros sobre el tablero.
+    sign: menu_sign::Sign,
     world: Option<World>,
     players: Vec<Player>,
     /// Qué gobierna a cada bomber del mundo.
@@ -376,7 +379,7 @@ impl App {
     fn menu_key(&mut self, el: &ActiveEventLoop, code: KeyCode) {
         // En la raíz, el tablero 3D anima la elección antes de entrar.
         if self.menu.at_root() && self.gfx.is_some() {
-            match self.board.key(code, self.menu.selection()) {
+            match self.board.key(code, self.menu.root_choice()) {
                 menu_board::KeyAction::Pass => {}
                 menu_board::KeyAction::Lit => {
                     self.audio.play(Sfx::PutBomb);
@@ -639,10 +642,11 @@ impl ApplicationHandler for App {
                     Screen::Menu => {
                         self.acc = 0.0;
                         let at_root = self.menu.at_root();
-                        let event = self.gfx.as_mut().and_then(|(_, r)| {
-                            self.board
-                                .update(r, frame as f32, self.menu.selection(), at_root)
-                        });
+                        let choice = self.menu.root_choice();
+                        let event = self
+                            .gfx
+                            .as_mut()
+                            .and_then(|(_, r)| self.board.update(r, frame as f32, choice, at_root));
                         match event {
                             Some(menu_board::Event::Exploded) => self.audio.play(Sfx::Explode),
                             Some(menu_board::Event::Enter) => {
@@ -650,6 +654,8 @@ impl ApplicationHandler for App {
                             }
                             None => {}
                         }
+                        let page = (!self.menu.at_root()).then(|| self.menu.page());
+                        self.sign.update(frame as f32, page);
                     }
                     _ => self.acc = 0.0,
                 }
@@ -704,25 +710,24 @@ impl ApplicationHandler for App {
                             s.draw(r, a);
                             r.render();
                         }
-                        _ if self.menu.at_root() => {
+                        _ => {
+                            // El tablero siempre; en un submenú, su letrero encima.
                             let skin = self.config.bombers.first().map_or(0, |b| b.skin as usize);
                             self.board.draw(
                                 r,
                                 a,
-                                &self.menu.labels(),
-                                self.menu.selection(),
+                                &self.menu.root_labels(),
+                                self.menu.root_choice(),
                                 menu_board::Look {
                                     theme: self.config.theme.clamp(0, 5) as u32,
                                     skin,
                                     fire_shader: self.video.fire,
                                     shockwaves: self.video.shockwaves,
                                     shake: self.config.shaky_explosions,
+                                    labels: self.menu.at_root(),
                                 },
                             );
-                            r.render();
-                        }
-                        _ => {
-                            self.menu.draw(r, a);
+                            self.sign.draw(r, a, time, skin);
                             self.board.draw_flash(r);
                             r.render();
                         }
@@ -770,6 +775,7 @@ fn main() {
         video_path,
         menu,
         board: menu_board::Board::new(0),
+        sign: menu_sign::Sign::new(),
         world: None,
         players: Vec::new(),
         controls: Vec::new(),

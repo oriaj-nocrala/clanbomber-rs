@@ -165,6 +165,8 @@ impl App {
             "new-game" => {
                 self.screen = Screen::Menu;
                 self.menu.key(KeyCode::Enter);
+                // El letrero ya de frente, sin el giro de entrada.
+                self.sign.settle(Some(self.menu.page()));
             }
             "gameplay-ice" | "gameplay-jungle" => {
                 let (theme, map) = if name == "gameplay-ice" {

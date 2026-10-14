@@ -1,7 +1,8 @@
 # Handoff: menú principal como tablero 3D ("el menú es una partida")
 
-Estado: fases 1 y 2 hechas en la rama `menu-3d` (`cb-render/board3d.rs`, `cb-game/menu_board.rs`,
-caras de los cubos en `assets/pics/maptiles_cubes.png`). Falta la fase 3. Maqueta:
+Estado: fases 1, 2 y 3 hechas en la rama `menu-3d` (`cb-render/board3d.rs`, `cb-game/menu_board.rs`,
+caras de los cubos en `assets/pics/maptiles_cubes.png`). Player Setup y Map Selection
+siguen como pantallas propias. Maqueta:
 `docs/menu-3d-maqueta.png`.
 
 ## La idea

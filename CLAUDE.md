@@ -66,8 +66,8 @@ cargo fmt
   luces (fuego, bombas que laten, halos de bombers, extras); `shards.rs` simula en CPU los trozos con textura (cajas y
   extras quemados, con altura falsa y rebote) y el "pop" de los extras recogidos, en `video.txt` aparte de `Config` para no
   entrar en `World::state_hash`; `audio.rs` (efectos y música; el núcleo solo emite `GameEvent`); `menu.rs` es el menú en árbol
-  (opciones de `Config`, guardadas al cambiar; la raíz se dibuja como tablero 3D en `menu_board.rs`, ver
-  `docs/menu-3d.md`); `intro.rs`, `player_setup.rs`, `map_select.rs`, `map_editor.rs`, `credits.rs` y `help.rs`
+  (opciones de `Config`, guardadas al cambiar; la raíz se dibuja como tablero 3D en `menu_board.rs` y los
+  submenús como letreros que giran en `menu_sign.rs`, ver `docs/menu-3d.md`); `intro.rs`, `player_setup.rs`, `map_select.rs`, `map_editor.rs`, `credits.rs` y `help.rs`
   son las demás pantallas de menú (`screen.rs`: `Flow` y `TextEdit`). Pantallas: menú ⇄ partida (Esc vuelve al menú; Espacio pasa
   del marcador a la siguiente ronda).
 - `assets/maps`: copiados del fork de referencia (ver abajo). `assets/pics`: las imágenes del

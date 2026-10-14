@@ -47,6 +47,8 @@ pub struct Assets {
     pub fl_logo: TextureId,
     /// Disco blanco que se desvanece hacia el borde (halos de luz, llamas).
     pub glow: TextureId,
+    /// sign.png: el letrero de madera de los submenús, en 9 partes (`tools/sprites/sign.py`).
+    pub sign: TextureId,
     /// DejaVuSans-Bold a 28 y a 18 px (Resources::Font_big / Font_small).
     pub font_big: Font,
     pub font_small: Font,
@@ -114,6 +116,7 @@ impl Assets {
         let credits_bg = pic("horst_evil.png");
         let editor_bg = pic("map_editor.png");
         let not_available = pic("not_available.png");
+        let sign = pic("sign.png");
         let cb_logo = pic("cb_logo_small.png");
         // El logo de Fischlustig (los autores del original) se queda como era, sin filtrar.
         let fl_logo = {
@@ -174,6 +177,7 @@ impl Assets {
             cb_logo,
             fl_logo,
             glow,
+            sign,
             font_big,
             font_small,
         }
