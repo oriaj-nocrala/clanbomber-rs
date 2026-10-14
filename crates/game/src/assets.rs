@@ -105,6 +105,7 @@ impl Assets {
         let corpse_parts = sheet("corpse_parts.png");
         let ps_teams = sheet("ps_teams.png");
         let team_lamps = sheet("ps_teamlamps.png");
+        let ps_controls = sheet("ps_controls.png");
         let mut tex = |name: &str| {
             let path = dir.join("pics").join(name);
             r.load_texture(&path)
@@ -119,7 +120,6 @@ impl Assets {
             tex("horst_evil.png"),
         );
         let editor_bg = tex("map_editor.png");
-        let ps_controls = tex("ps_controls.png");
         let (not_available, cb_logo, fl_logo) = (
             tex("not_available.png"),
             tex("cb_logo_small.png"),
@@ -156,7 +156,7 @@ impl Assets {
             credits_bg,
             editor_bg,
             ps_teams: r.sheet_scaled(ps_teams.0, 125.0, 56.0, ps_teams.1),
-            ps_controls: r.sheet(ps_controls, 125.0, 56.0),
+            ps_controls: r.sheet_scaled(ps_controls.0, 125.0, 56.0, ps_controls.1),
             team_lamps: r.sheet_scaled(team_lamps.0, 30.0, 32.0, team_lamps.1),
             not_available,
             cb_logo,
