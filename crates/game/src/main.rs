@@ -52,6 +52,7 @@ use joystick::Joysticks;
 use map_editor::MapEditor;
 use map_select::MapSelect;
 use menu::{Id, Menu, Outcome};
+use menu_sign::Card;
 use player_setup::PlayerSetup;
 use screen::Flow;
 use sparks::Sparks;
@@ -272,6 +273,21 @@ impl App {
         self.acc = 0.0;
         self.last = Instant::now();
         true
+    }
+
+    /// Lo que va en el letrero sobre el tablero: el submenú abierto o la pantalla que cuelga
+    /// de él; nada en la raíz.
+    fn sign_card(&self) -> Option<Card> {
+        let panel = |id, size| Card::Panel {
+            id,
+            depth: self.menu.page().depth + 1,
+            size,
+        };
+        match &self.screen {
+            Screen::PlayerSetup(_) => Some(panel(Id::PlayerSetup, player_setup::PANEL)),
+            Screen::MapSelect(_) => Some(panel(Id::MapSelection, map_select::PANEL)),
+            _ => (!self.menu.at_root()).then(|| Card::Page(self.menu.page())),
+        }
     }
 
     fn open_map_select(&mut self) {
@@ -639,7 +655,7 @@ impl ApplicationHandler for App {
                             self.screen = Screen::Menu;
                         }
                     }
-                    Screen::Menu => {
+                    Screen::Menu | Screen::PlayerSetup(_) | Screen::MapSelect(_) => {
                         self.acc = 0.0;
                         let at_root = self.menu.at_root();
                         let choice = self.menu.root_choice();
@@ -649,13 +665,14 @@ impl ApplicationHandler for App {
                             .and_then(|(_, r)| self.board.update(r, frame as f32, choice, at_root));
                         match event {
                             Some(menu_board::Event::Exploded) => self.audio.play(Sfx::Explode),
-                            Some(menu_board::Event::Enter) => {
+                            Some(menu_board::Event::Enter)
+                                if matches!(self.screen, Screen::Menu) =>
+                            {
                                 self.menu_apply_key(el, KeyCode::Enter)
                             }
-                            None => {}
+                            _ => {}
                         }
-                        let page = (!self.menu.at_root()).then(|| self.menu.page());
-                        self.sign.update(frame as f32, page);
+                        self.sign.update(frame as f32, self.sign_card());
                     }
                     _ => self.acc = 0.0,
                 }
@@ -686,14 +703,6 @@ impl ApplicationHandler for App {
                             self.paused,
                             self.slowmo.highlight().filter(|_| self.video.shockwaves),
                         ),
-                        (Screen::PlayerSetup(s), _) => {
-                            s.draw(r, a, &self.config, time);
-                            r.render();
-                        }
-                        (Screen::MapSelect(s), _) => {
-                            s.draw(r, a, &self.config);
-                            r.render();
-                        }
                         (Screen::MapEditor(s), _) => {
                             s.draw(r, a, &self.config);
                             r.render();
@@ -728,6 +737,18 @@ impl ApplicationHandler for App {
                                 },
                             );
                             self.sign.draw(r, a, time, skin);
+                            // Las pantallas con letrero propio dibujan dentro cuando ya está de frente.
+                            if let Some(front) = self.sign.front() {
+                                match &self.screen {
+                                    Screen::PlayerSetup(s) => {
+                                        s.draw(r, a, &self.config, &front, time, skin)
+                                    }
+                                    Screen::MapSelect(s) => {
+                                        s.draw(r, a, &self.config, &front, time)
+                                    }
+                                    _ => {}
+                                }
+                            }
                             self.board.draw_flash(r);
                             r.render();
                         }

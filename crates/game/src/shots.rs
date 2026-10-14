@@ -166,7 +166,7 @@ impl App {
                 self.screen = Screen::Menu;
                 self.menu.key(KeyCode::Enter);
                 // El letrero ya de frente, sin el giro de entrada.
-                self.sign.settle(Some(self.menu.page()));
+                self.sign.settle(self.sign_card());
             }
             "gameplay-ice" | "gameplay-jungle" => {
                 let (theme, map) = if name == "gameplay-ice" {
@@ -223,6 +223,7 @@ impl App {
                 ps.key(KeyCode::ArrowRight, None, &mut self.config, 0);
                 ps.key(KeyCode::ArrowRight, None, &mut self.config, 0);
                 self.screen = Screen::PlayerSetup(ps);
+                self.sign.settle(self.sign_card());
             }
             "map-select" => {
                 self.config = config_with(&[(0, AI, 0), (1, AI, 0)], 4);
@@ -235,6 +236,7 @@ impl App {
                     self.config.disabled_maps = vec!["Arena".into(), "Boiling_Egg".into()];
                     if let Some(ms) = MapSelect::new(&list, &self.config, a) {
                         self.screen = Screen::MapSelect(ms);
+                        self.sign.settle(self.sign_card());
                     }
                 }
             }

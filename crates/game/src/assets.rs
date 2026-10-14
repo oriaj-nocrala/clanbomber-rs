@@ -33,13 +33,8 @@ pub struct Assets {
     pub status_bg: TextureId,
     pub title_bg: TextureId,
     /// Fondos de las pantallas de menú (800x600).
-    pub player_setup_bg: TextureId,
-    pub map_select_bg: TextureId,
     pub credits_bg: TextureId,
     pub editor_bg: TextureId,
-    /// ps_teams.png y ps_controls.png: 5 celdas de 125x56 en vertical.
-    pub ps_teams: Sheet,
-    pub ps_controls: Sheet,
     /// ps_teamlamps.png: la lámpara de cada equipo (4 celdas de 30x32).
     pub team_lamps: Sheet,
     pub not_available: TextureId,
@@ -104,15 +99,11 @@ impl Assets {
         let observer = pic("observer.png");
         let cup = pic("cup2.png");
         let corpse_parts = pic("corpse_parts.png");
-        let ps_teams = pic("ps_teams.png");
         let team_lamps = pic("ps_teamlamps.png");
-        let ps_controls = pic("ps_controls.png");
         let explosion = pic("explosion2.png");
         // Los fondos pueden tener cualquier tamaño 4:3 (`Renderer::fullscreen`).
         let status_bg = pic("game_status.png");
         let title_bg = pic("clanbomber_title_andi.png");
-        let player_setup_bg = pic("playersetup.png");
-        let map_select_bg = pic("level_selection.png");
         let credits_bg = pic("horst_evil.png");
         let editor_bg = pic("map_editor.png");
         let not_available = pic("not_available.png");
@@ -166,12 +157,8 @@ impl Assets {
             corpse_parts: r.sheet_scaled(corpse_parts, 40.0, 40.0, SCALE),
             status_bg,
             title_bg,
-            player_setup_bg,
-            map_select_bg,
             credits_bg,
             editor_bg,
-            ps_teams: r.sheet_scaled(ps_teams, 125.0, 56.0, SCALE),
-            ps_controls: r.sheet_scaled(ps_controls, 125.0, 56.0, SCALE),
             team_lamps: r.sheet_scaled(team_lamps, 30.0, 32.0, SCALE),
             not_available,
             cb_logo,

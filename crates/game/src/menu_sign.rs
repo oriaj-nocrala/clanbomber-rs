@@ -1,13 +1,15 @@
 //! Los submenús como letreros de madera sobre el tablero 3D (`docs/menu-3d.md`, fase 3). Al
 //! cambiar de submenú, el letrero viejo gira como una carta hasta ponerse de canto y el nuevo
-//! entra girando desde el otro lado; el texto aparece cuando ya está de frente.
+//! entra girando desde el otro lado; el texto aparece cuando ya está de frente. Las pantallas
+//! con contenido propio (Player Setup, Map Selection) usan el mismo letrero como panel
+//! ([`Card::Panel`]) y dibujan dentro con las piezas de aquí ([`label`], [`highlight`]...).
 
 use std::f32::consts::FRAC_PI_2;
 
 use cb_render::{Align, Renderer, Shadow, TextStyle};
 
 use crate::assets::Assets;
-use crate::menu::Page;
+use crate::menu::{Id, Page};
 
 /// Segundos que tarda el letrero en irse (hasta quedar de canto) y en llegar.
 const OUT: f32 = 0.15;
@@ -26,13 +28,41 @@ const MAX_WIDTH: f32 = 780.0;
 /// Opacidad del velo que oscurece el tablero detrás del letrero.
 const DIM: f32 = 0.5;
 
+/// Lo que muestra el letrero.
+pub enum Card {
+    /// Un submenú del árbol: el letrero dibuja sus filas.
+    Page(Page),
+    /// Una pantalla propia: el letrero es solo el marco de `size` px y quien la abre dibuja
+    /// dentro cuando [`Sign::front`] lo diga.
+    Panel {
+        id: Id,
+        depth: usize,
+        size: [f32; 2],
+    },
+}
+
+impl Card {
+    fn key(&self) -> (Id, usize) {
+        match self {
+            Card::Page(p) => (p.id, p.depth),
+            Card::Panel { id, depth, .. } => (*id, *depth),
+        }
+    }
+}
+
+/// El panel ya de frente: dónde está y la opacidad de su contenido.
+pub struct Front {
+    pub rect: [f32; 4],
+    pub alpha: f32,
+}
+
 pub struct Sign {
-    page: Option<Page>,
+    page: Option<Card>,
     /// Segundos desde que se pidió la página actual.
     t: f32,
     /// Cuánto espera la página actual a que termine de irse la anterior.
     delay: f32,
-    leaving: Option<(Page, f32)>,
+    leaving: Option<(Card, f32)>,
     /// Sentido del giro: 1 al bajar a un submenú, -1 al subir.
     dir: f32,
 }
@@ -48,10 +78,10 @@ impl Sign {
         }
     }
 
-    /// `page`: el submenú abierto, o `None` en la raíz (el tablero).
-    pub fn update(&mut self, dt: f32, page: Option<Page>) {
-        let old = self.page.as_ref().map(|p| (p.id, p.depth));
-        let new = page.as_ref().map(|p| (p.id, p.depth));
+    /// `page`: el submenú o la pantalla abierta, o `None` en la raíz (el tablero).
+    pub fn update(&mut self, dt: f32, page: Option<Card>) {
+        let old = self.page.as_ref().map(Card::key);
+        let new = page.as_ref().map(Card::key);
         if old.map(|o| o.0) != new.map(|n| n.0) {
             let depth = |d: Option<(_, usize)>| d.map_or(0, |d| d.1);
             self.dir = if depth(new) >= depth(old) { 1.0 } else { -1.0 };
@@ -70,7 +100,7 @@ impl Sign {
     }
 
     /// Deja `page` ya de frente, sin giro (para las capturas).
-    pub fn settle(&mut self, page: Option<Page>) {
+    pub fn settle(&mut self, page: Option<Card>) {
         self.page = page;
         self.leaving = None;
         self.delay = 0.0;
@@ -88,6 +118,18 @@ impl Sign {
         Some(-self.dir * FRAC_PI_2 * swing)
     }
 
+    /// El panel actual, si ya está casi de frente (antes, su contenido no se dibuja).
+    pub fn front(&self) -> Option<Front> {
+        let Some(Card::Panel { size, .. }) = &self.page else {
+            return None;
+        };
+        let alpha = text_alpha(self.incoming_angle()?);
+        (alpha > 0.0).then(|| Front {
+            rect: panel_rect(*size),
+            alpha,
+        })
+    }
+
     pub fn draw(&self, r: &mut Renderer, a: &Assets, time: f32, skin: usize) {
         // El velo aparece con el letrero y se va con el último.
         let dim = match (&self.page, &self.leaving) {
@@ -98,16 +140,171 @@ impl Sign {
         if dim > 0.0 {
             r.quad(0.0, 0.0, 800.0, 600.0, [0.0, 0.0, 0.0, dim]);
         }
-        if let Some((p, t)) = &self.leaving {
-            draw_page(r, a, p, self.dir * FRAC_PI_2 * (t / OUT), time, skin);
+        if let Some((c, t)) = &self.leaving {
+            draw_card(r, a, c, self.dir * FRAC_PI_2 * (t / OUT), time, skin);
         }
-        if let (Some(p), Some(angle)) = (&self.page, self.incoming_angle()) {
-            draw_page(r, a, p, angle, time, skin);
+        if let (Some(c), Some(angle)) = (&self.page, self.incoming_angle()) {
+            draw_card(r, a, c, angle, time, skin);
         }
     }
 }
 
 /// Un letrero girado `angle` radianes sobre su eje vertical.
+fn draw_card(r: &mut Renderer, a: &Assets, c: &Card, angle: f32, time: f32, skin: usize) {
+    match c {
+        Card::Page(p) => draw_page(r, a, p, angle, time, skin),
+        Card::Panel { size, .. } => draw_frame(r, a, panel_rect(*size), angle),
+    }
+}
+
+/// Un panel de `size` centrado en el lienzo.
+fn panel_rect([w, h]: [f32; 2]) -> [f32; 4] {
+    let (w, h) = (w.min(MAX_WIDTH), h.min(600.0));
+    [400.0 - w / 2.0, 300.0 - h / 2.0, w, h]
+}
+
+/// Lo que queda dentro del marco y el margen de un panel.
+pub fn inner([x, y, w, h]: [f32; 4]) -> [f32; 4] {
+    let m = BORDER + PAD;
+    [x + m, y + m, w - 2.0 * m, h - 2.0 * m]
+}
+
+/// Opacidad del texto según el giro: solo aparece casi de frente.
+fn text_alpha(angle: f32) -> f32 {
+    (1.0 - angle.abs() / 0.12).max(0.0)
+}
+
+/// La madera del letrero (`sign.png` en 9 partes) girada `angle` sobre su eje vertical.
+fn draw_frame(r: &mut Renderer, a: &Assets, [x0, y0, w, h]: [f32; 4], angle: f32) {
+    let (cx, cy) = (x0 + w / 2.0, y0 + h / 2.0);
+    // Perspectiva del giro: el lado que se aleja se achica hacia el centro.
+    let (sin, cos) = angle.sin_cos();
+    let warp = |x: f32, y: f32| {
+        let dx = x - cx;
+        let k = 1.0 / (1.0 + dx * sin * PERSPECTIVE);
+        [cx + dx * cos * k, cy + (y - cy) * k]
+    };
+    let shade = 1.0 - 0.55 * sin.abs();
+    let tint = [shade, shade, shade, 1.0];
+    let (tw, _) = r.texture_size(a.sign);
+    let xs = [x0, x0 + BORDER, x0 + w - BORDER, x0 + w];
+    let ys = [y0, y0 + BORDER, y0 + h - BORDER, y0 + h];
+    let ts = [0.0, BORDER_TEXELS, tw - BORDER_TEXELS, tw];
+    for j in 0..3 {
+        for i in 0..3 {
+            let src = [ts[i], ts[j], ts[i + 1] - ts[i], ts[j + 1] - ts[j]];
+            let corners = [
+                warp(xs[i], ys[j]),
+                warp(xs[i + 1], ys[j]),
+                warp(xs[i], ys[j + 1]),
+                warp(xs[i + 1], ys[j + 1]),
+            ];
+            r.sprite_corners(a.sign, src, corners, tint);
+        }
+    }
+}
+
+/// Cómo se pinta un texto sobre la madera.
+#[derive(Clone, Copy)]
+pub enum Tone {
+    /// Crema con contorno oscuro.
+    Normal,
+    /// Dorado con resplandor naranja (lo elegido).
+    Selected,
+    /// Apagado (lo desactivado).
+    Dim,
+    /// Un color propio con el contorno de `Normal`.
+    Color([f32; 3]),
+}
+
+const GOLD: [f32; 3] = [1.0, 0.85, 0.4];
+
+fn outline(width: f32, alpha: f32) -> TextStyle {
+    TextStyle {
+        outline: Some((width, [0.12, 0.06, 0.02, alpha])),
+        shadow: TextStyle::DEFAULT.shadow,
+    }
+}
+
+/// Un texto del letrero (`y` es el borde de arriba de la línea, como en `Renderer::text`).
+#[allow(clippy::too_many_arguments)]
+pub fn label(
+    r: &mut Renderer,
+    font: &cb_render::Font,
+    s: &str,
+    x: f32,
+    y: f32,
+    align: Align,
+    tone: Tone,
+    alpha: f32,
+) {
+    let rgb = |[r, g, b]: [f32; 3]| [r, g, b, alpha];
+    let (color, style) = match tone {
+        Tone::Normal => (rgb([0.93, 0.88, 0.78]), outline(1.5, alpha)),
+        Tone::Dim => (rgb([0.55, 0.5, 0.44]), outline(1.5, alpha * 0.6)),
+        Tone::Color(c) => (rgb(c), outline(1.5, alpha)),
+        Tone::Selected => (
+            rgb(GOLD),
+            TextStyle {
+                outline: Some((2.0, [0.3, 0.06, 0.0, alpha])),
+                shadow: Some(Shadow {
+                    offset: [0.0, 0.0],
+                    blur: 8.0,
+                    color: [1.0, 0.35, 0.0, 0.8 * alpha],
+                }),
+            },
+        ),
+    };
+    r.text_styled(font, s, x, y, color, align, style);
+}
+
+/// Título dorado centrado en `cx`.
+pub fn title(r: &mut Renderer, font: &cb_render::Font, s: &str, cx: f32, y: f32, alpha: f32) {
+    let [cr, cg, cb] = GOLD;
+    r.text_styled(
+        font,
+        s,
+        cx,
+        y,
+        [cr, cg, cb, alpha],
+        Align::Center,
+        outline(2.0, alpha),
+    );
+}
+
+/// Resplandor cálido detrás de lo elegido (`strength` 1 para la fila; más para una casilla).
+pub fn highlight(r: &mut Renderer, a: &Assets, [x, y, w, h]: [f32; 4], strength: f32, alpha: f32) {
+    r.sprite_whole(
+        a.glow,
+        [x - 10.0, y - 10.0, w + 20.0, h + 20.0],
+        [1.4, 0.55, 0.12, 0.45 * strength * alpha],
+    );
+}
+
+/// La bomba encendida que hace de cursor, centrada en `(cx, cy)` y del alto de `fh`.
+#[allow(clippy::too_many_arguments)]
+pub fn bomb_cursor(
+    r: &mut Renderer,
+    a: &Assets,
+    cx: f32,
+    cy: f32,
+    fh: f32,
+    time: f32,
+    skin: usize,
+    alpha: f32,
+) {
+    let frame = (time * 8.0) as u32 % 4;
+    let beat = 1.0 + 0.06 * (time * 9.0).sin();
+    let size = fh * 1.8 * beat;
+    r.sprite_tinted(
+        a.bombs.tex,
+        a.bombs.cell(skin as u32 * 4 + frame),
+        [cx - size / 2.0, cy - size * 0.6 + fh * 0.1, size, size],
+        [1.0, 1.0, 1.0, alpha],
+    );
+}
+
+/// Un submenú: el marco a la medida de sus filas y, casi de frente, el texto.
 fn draw_page(r: &mut Renderer, a: &Assets, p: &Page, angle: f32, time: f32, skin: usize) {
     // Ancho del texto con una fuente: el cursor, la etiqueta más larga y su valor con « ».
     let content = |font: &cb_render::Font| {
@@ -134,99 +331,40 @@ fn draw_page(r: &mut Renderer, a: &Assets, p: &Page, angle: f32, time: f32, skin
         &a.font_small
     };
     let fh = font.line_height().round();
-    let inner = content(font);
-    let w = (inner + 2.0 * (BORDER + PAD)).min(MAX_WIDTH);
     let row_h = fh + ROW_GAP;
+    let w = (content(font) + 2.0 * (BORDER + PAD)).min(MAX_WIDTH);
     let h = fh * 1.6 + p.rows.len() as f32 * row_h + 2.0 * (BORDER + PAD);
-    let (cx, cy) = (400.0, 300.0);
-    let (x0, y0) = (cx - w / 2.0, cy - h / 2.0);
-
-    // Perspectiva del giro: el lado que se aleja se achica hacia el centro.
-    let (sin, cos) = angle.sin_cos();
-    let warp = |x: f32, y: f32| {
-        let dx = x - cx;
-        let k = 1.0 / (1.0 + dx * sin * PERSPECTIVE);
-        [cx + dx * cos * k, cy + (y - cy) * k]
-    };
-    let shade = 1.0 - 0.55 * sin.abs();
-    let tint = [shade, shade, shade, 1.0];
-    let (tw, _) = r.texture_size(a.sign);
-    let xs = [x0, x0 + BORDER, x0 + w - BORDER, x0 + w];
-    let ys = [y0, y0 + BORDER, y0 + h - BORDER, y0 + h];
-    let ts = [0.0, BORDER_TEXELS, tw - BORDER_TEXELS, tw];
-    for j in 0..3 {
-        for i in 0..3 {
-            let src = [ts[i], ts[j], ts[i + 1] - ts[i], ts[j + 1] - ts[j]];
-            let corners = [
-                warp(xs[i], ys[j]),
-                warp(xs[i + 1], ys[j]),
-                warp(xs[i], ys[j + 1]),
-                warp(xs[i + 1], ys[j + 1]),
-            ];
-            r.sprite_corners(a.sign, src, corners, tint);
-        }
-    }
+    let rect = panel_rect([w, h]);
+    draw_frame(r, a, rect, angle);
 
     // El texto, solo casi de frente (sin deformar: aparece al final del giro).
-    let alpha = 1.0 - angle.abs() / 0.12;
+    let alpha = text_alpha(angle);
     if alpha <= 0.0 {
         return;
     }
-    let gold = [1.0, 0.85, 0.4, alpha];
-    let cream = [0.93, 0.88, 0.78, alpha];
-    let outline = |c: f32| TextStyle {
-        outline: Some((c, [0.12, 0.06, 0.02, alpha])),
-        shadow: TextStyle::DEFAULT.shadow,
-    };
-    let mut y = y0 + BORDER + PAD * 0.7;
-    r.text_styled(font, &p.title, cx, y, gold, Align::Center, outline(2.0));
+    let [left, mut y, iw, _] = inner(rect);
+    let right = left + iw;
+    y -= PAD * 0.3;
+    title(r, font, &p.title, 400.0, y, alpha);
     y += fh * 1.6;
-    let (left, right) = (x0 + BORDER + PAD, x0 + w - BORDER - PAD);
-    for (row, (label, value)) in p.rows.iter().enumerate() {
+    for (row, (text, value)) in p.rows.iter().enumerate() {
         let selected = row == p.selection;
-        if selected {
+        let tone = if selected {
             // Un resplandor cálido detrás de la fila y la bomba encendida como cursor.
-            r.sprite_whole(
-                a.glow,
-                [left - 10.0, y - 10.0, right - left + 20.0, fh + 20.0],
-                [1.4, 0.55, 0.12, 0.45 * alpha],
-            );
-            let frame = (time * 8.0) as u32 % 4;
-            let beat = 1.0 + 0.06 * (time * 9.0).sin();
-            let size = fh * 1.8 * beat;
-            r.sprite_tinted(
-                a.bombs.tex,
-                a.bombs.cell(skin as u32 * 4 + frame),
-                [
-                    left + 16.0 - size / 2.0,
-                    y + fh / 2.0 - size * 0.6,
-                    size,
-                    size,
-                ],
-                [1.0, 1.0, 1.0, alpha],
-            );
-        }
-        let color = if selected { gold } else { cream };
-        let style = if selected {
-            TextStyle {
-                outline: Some((2.0, [0.3, 0.06, 0.0, alpha])),
-                shadow: Some(Shadow {
-                    offset: [0.0, 0.0],
-                    blur: 8.0,
-                    color: [1.0, 0.35, 0.0, 0.8 * alpha],
-                }),
-            }
+            highlight(r, a, [left, y, right - left, fh], 1.0, alpha);
+            bomb_cursor(r, a, left + 16.0, y + fh * 0.4, fh, time, skin, alpha);
+            Tone::Selected
         } else {
-            outline(1.5)
+            Tone::Normal
         };
-        r.text_styled(font, label, left + CURSOR, y, color, Align::Left, style);
+        label(r, font, text, left + CURSOR, y, Align::Left, tone, alpha);
         if let Some(v) = value {
             let shown = if selected {
                 format!("« {v} »")
             } else {
                 v.clone()
             };
-            r.text_styled(font, &shown, right, y, color, Align::Right, style);
+            label(r, font, &shown, right, y, Align::Right, tone, alpha);
         }
         y += row_h;
     }

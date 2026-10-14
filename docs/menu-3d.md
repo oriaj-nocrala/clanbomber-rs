@@ -2,7 +2,7 @@
 
 Estado: fases 1, 2 y 3 hechas en la rama `menu-3d` (`cb-render/board3d.rs`, `cb-game/menu_board.rs`,
 caras de los cubos en `assets/pics/maptiles_cubes.png`). Player Setup y Map Selection
-siguen como pantallas propias. Maqueta:
+también van en el letrero (`Card::Panel`). Maqueta:
 `docs/menu-3d-maqueta.png`.
 
 ## La idea
@@ -49,9 +49,10 @@ cualquiera, no solo el tablero del menú (la simulación no cambia; el 3D es otr
 
 ## Lo que falta
 
-- **Player Setup y Map Selection** siguen como pantallas propias con su fondo (`player_setup.rs`,
-  `map_select.rs`). Idea: llevarlas al tablero como letreros (`menu_sign.rs`); la lista de 33
-  mapas, como un letrero con scroll y la vista previa del mapa al lado.
+- ~~Player Setup y Map Selection~~: hechas como letreros (`menu_sign::Card::Panel`; cada
+  pantalla dibuja su contenido con `menu_sign::{label, highlight, bomb_cursor}` cuando
+  `Sign::front` dice que ya está de frente). Ya no usan sus fondos ni `ps_teams`/`ps_controls`
+  (los PNG siguen en `assets/pics`, sin cargarse). Pendiente: ver el giro en la ventana real.
 - **Letrero pintado:** `assets/pics/sign.png` es generado por código (`tools/sprites/sign.py`).
   El usuario lo dio por bueno; si se quiere uno de ChatGPT: PNG cuadrado de 384x384 con un marco
   de 64 texels (se dibuja en 9 partes).
