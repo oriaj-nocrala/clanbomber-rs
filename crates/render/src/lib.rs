@@ -632,6 +632,29 @@ impl Renderer {
         );
     }
 
+    /// Región `src` de una textura estirada sobre un cuadrilátero cualquiera (`corners`: arriba
+    /// izquierda, arriba derecha, abajo izquierda, abajo derecha), p. ej. un letrero que gira
+    /// en perspectiva.
+    pub fn sprite_corners(
+        &mut self,
+        tex: TextureId,
+        src: [f32; 4],
+        corners: [[f32; 2]; 4],
+        tint: [f32; 4],
+    ) {
+        let (tw, th) = self.textures[tex.0].size;
+        let (u0, v0) = (src[0] / tw, src[1] / th);
+        let (u1, v1) = ((src[0] + src[2]) / tw, (src[1] + src[3]) / th);
+        let uvs = [[u0, v0], [u1, v0], [u0, v1], [u1, v1]];
+        let quad = std::array::from_fn(|i| Vertex {
+            pos: corners[i],
+            uv: uvs[i],
+            color: tint,
+            mode: MODE_NORMAL,
+        });
+        self.push_vertices(tex, quad);
+    }
+
     /// Región `src` de una textura dibujada centrada en `center`, de tamaño `size` y girada
     /// `angle` radianes (trozos que vuelan).
     pub fn sprite_rotated(
