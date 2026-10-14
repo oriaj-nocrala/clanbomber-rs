@@ -1,4 +1,4 @@
-"""Arma not_available_hd.png (la X de "mapa no disponible", 256 px a 4x) a partir de una X roja
+"""Arma not_available.png (la X de "mapa no disponible", 256 px a 4x) a partir de una X roja
 de ChatGPT sobre negro: la transparencia sale del brillo.
 Uso: not_available.py <ia.png> <salida.png>"""
 import sys

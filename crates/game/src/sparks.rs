@@ -17,7 +17,7 @@ use crate::draw::{skin_color, speed_level, srgb_rgba, Player};
 /// Esquina del mapa en el lienzo virtual (offset 60, 40 del original).
 const ORIGIN: (f32, f32) = (60.0, 40.0);
 
-/// Color de la caja de cada tema de `maptiles_hd.png` (celda `tema * 4 + 2`): la media de sus
+/// Color de la caja de cada tema de `maptiles.png` (celda `tema * 4 + 2`): la media de sus
 /// píxeles distintos del suelo; la bola de nieve y los ladrillos, a ojo (el suelo se cuela).
 const BOX_COLORS: [(u8, u8, u8); 6] = [
     (205, 222, 240),

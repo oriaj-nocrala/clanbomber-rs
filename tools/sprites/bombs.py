@@ -1,4 +1,4 @@
-"""Arma bombs_hd.png (8 bombas x 4 cuadros, celdas de 160 px, índice = aspecto * 4 + cuadro)
+"""Arma bombs.png (8 bombas x 4 cuadros, celdas de 160 px, índice = aspecto * 4 + cuadro)
 a partir de una tira de 8 bombas de ChatGPT. Los 4 cuadros hacen titilar la chispa de la mecha.
 Uso: bombs.py <ia.png> <salida.png> <gif_prev>"""
 import sys

@@ -1,4 +1,4 @@
-"""Genera explosion2_hd.png (7 piezas x 3 cuadros, celdas de 160 px) por código: punta izquierda,
+"""Genera explosion2.png (7 piezas x 3 cuadros, celdas de 160 px) por código: punta izquierda,
 horizontal, punta derecha, punta arriba, vertical, punta abajo y centro (Explosion.h), del
 cuadro más grueso al más fino. Solo se ve sin compute shaders (si no, las dibuja fire.wgsl).
 Cada pieza es una banda de fuego con el borde roto por ruido; el ruido depende de la posición a

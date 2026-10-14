@@ -1,6 +1,6 @@
 """Rehace la hoja HD de la araña: alinea cada cuadro por la marca roja del abdomen (en vez de
 por su caja, que cambia con las patas) y arma el ciclo de caminar alternando las dos poses más
-distintas de cada dirección. Uso: spider_gait.py <hoja_hd.png> <salida.png> <gif_prefijo>"""
+distintas de cada dirección. Uso: spider_gait.py <hoja.png> <salida.png> <gif_prefijo>"""
 import sys
 from PIL import Image
 import numpy as np

@@ -1,4 +1,4 @@
-"""Arma maptiles_hd.png (6 temas x 4 casillas de 160 px en una fila, como maptiles.png) a partir
+"""Arma maptiles.png (6 temas x 4 casillas de 160 px en una fila, como maptiles.png) a partir
 de una grilla de ChatGPT de 4 columnas x 6 filas separadas por franjas magenta.
 Uso: maptiles.py <ia.png> <salida.png> [<mosaico_prev.png>]"""
 import sys

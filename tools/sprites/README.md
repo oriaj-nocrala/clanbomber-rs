@@ -1,8 +1,11 @@
 # Sprites redibujados con IA
 
 Scripts para convertir las hojas que genera ChatGPT (o Qwen-Image en local) en las versiones
-`assets/pics/<original>_hd.png` que carga el juego (4 texels por píxel virtual; `CB_SD=1` usa las
-originales). Necesitan Python con Pillow, numpy y scipy.
+`assets/pics/*.png` que carga el juego (4 texels por píxel virtual). Necesitan Python con
+Pillow, numpy y scipy.
+
+Los gráficos originales del juego (40 px por casilla) ya no están en el árbol; para usarlos de
+referencia: `git show 3af9c68:assets/pics/<nombre>.png > original.png`.
 
 ## Flujo
 
@@ -23,23 +26,23 @@ originales). Necesitan Python con Pillow, numpy y scipy.
 - `spider_gait.py`: la araña; alinea por la marca roja y alterna sus dos poses más distintas.
 - `balls.py <ia.png> <dir_pics>`: las 4 pelotas (`bomber_dull_*`) desde 5 sprites azules,
   recoloreando el tono.
-- `bombs.py <ia.png> <salida.png> <gif>`: `bombs_hd.png` desde una tira de 8 bombas; los 4
+- `bombs.py <ia.png> <salida.png> <gif>`: `bombs.png` desde una tira de 8 bombas; los 4
   cuadros hacen titilar la chispa.
-- `extras.py <ia.png> <salida.png>`: `extras2_hd.png` desde una tira de 8 fichas (opacas).
-- `maptiles.py <ia.png> <salida.png> [prev.png]`: `maptiles_hd.png` desde una grilla de 4x6
+- `extras.py <ia.png> <salida.png>`: `extras2.png` desde una tira de 8 fichas (opacas).
+- `maptiles.py <ia.png> <salida.png> [prev.png]`: `maptiles.png` desde una grilla de 4x6
   separada por franjas magenta; los suelos orgánicos se empalman en los bordes.
-- `addons.py <ia.png> <salida.png> <prev.png>`: `maptile_addons_hd.png` (hielo translúcido,
+- `addons.py <ia.png> <salida.png> <prev.png>`: `maptile_addons.png` (hielo translúcido,
   flechas con la misma escala, ?, X y trampa) desde una tira con fondo transparente.
 - `varios.py <ia.png> <dir_pics> <prev.png>`: observador y relojes, copa, trozos de cadáver y
   lámparas de equipo desde una grilla de 4x3 sobre magenta.
-- `teams.py <dir_pics> <fuente.ttf>`: `ps_teams_hd.png` armado con las lámparas HD (no es IA).
+- `teams.py <dir_pics> <fuente.ttf>`: `ps_teams.png` armado con las lámparas HD (no es IA).
 - `controls.py <ia.png> <salida.png> [--fix]`: iconos de control del Player Setup; `--fix`
   arregla la generación usada (teclas IJKL y logo de marca del mando).
 - `move_title.py <in> <out> x0 y0 x1 y1 cx cy ancho`: los fondos de 4:3 (1448x1086) van tal
   cual; esto mueve y achica un título brillante que la IA puso encima de los encabezados.
-- `logo.py <game_status_ia.png> <salida.png>`: `cb_logo_small_hd.png` recortado del fondo del
+- `logo.py <game_status_ia.png> <salida.png>`: `cb_logo_small.png` recortado del fondo del
   marcador, con transparencia según el brillo.
-- `explosion.py <salida.png> [prev.png]`: `explosion2_hd.png` generado por código (no es IA):
+- `explosion.py <salida.png> [prev.png]`: `explosion2.png` generado por código (no es IA):
   bandas de fuego con ruido periódico por celda, para que las piezas empalmen.
 - `not_available.py <ia.png> <salida.png>`: la X de "mapa no disponible", desde una X roja
   sobre negro (transparencia según el brillo).

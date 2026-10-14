@@ -45,31 +45,15 @@ pub struct Assets {
     pub font_small: Font,
 }
 
-/// Las hojas redibujadas con IA tienen 4 texels por píxel virtual.
-const HD_SCALE: f32 = 4.0;
+/// Las hojas están redibujadas con IA a 4 texels por píxel virtual (`tools/sprites`).
+const SCALE: f32 = 4.0;
 
-/// Versión redibujada con IA de `name` (`<nombre>_hd.png`), con filtrado bilineal porque casi
-/// siempre se dibuja más pequeña que la textura. `None` si no existe o con CB_SD=1 (originales).
-fn load_hd(r: &mut Renderer, dir: &std::path::Path, name: &str) -> Option<TextureId> {
-    if std::env::var_os("CB_SD").is_some() {
-        return None;
-    }
-    let path = dir.join("pics").join(name.replace(".png", "_hd.png"));
-    r.load_texture_smooth(path).ok()
-}
-
-/// Textura de una hoja de sprites y su escala: la HD si la hay, si no la original.
-fn load_sheet_tex(r: &mut Renderer, dir: &std::path::Path, name: &str) -> (TextureId, f32) {
-    match load_hd(r, dir, name) {
-        Some(t) => (t, HD_SCALE),
-        None => {
-            let path = dir.join("pics").join(name);
-            let t = r
-                .load_texture(&path)
-                .unwrap_or_else(|e| panic!("{}: {e}", path.display()));
-            (t, 1.0)
-        }
-    }
+/// Una imagen de `assets/pics`, con filtrado bilineal porque casi siempre se dibuja más pequeña
+/// que la textura.
+fn load_pic(r: &mut Renderer, dir: &std::path::Path, name: &str) -> TextureId {
+    let path = dir.join("pics").join(name);
+    r.load_texture_smooth(&path)
+        .unwrap_or_else(|e| panic!("{}: {e}", path.display()))
 }
 
 impl Assets {
@@ -88,51 +72,35 @@ impl Assets {
         ];
         let skin_tex: Vec<_> = skin_files
             .iter()
-            .map(|(f, h, o)| {
-                let (t, scale) = load_sheet_tex(r, &dir, f);
-                (t, *h, *o, scale)
-            })
+            .map(|(f, h, o)| (load_pic(r, &dir, f), *h, *o))
             .collect();
-        // Los fondos HD pueden tener cualquier tamaño 4:3 (`Renderer::fullscreen`).
-        let title_hd = load_hd(r, &dir, "clanbomber_title_andi.png");
-        let cb_logo_hd = load_hd(r, &dir, "cb_logo_small.png");
-        let not_available_hd = load_hd(r, &dir, "not_available.png");
-        let [status_hd, player_setup_hd, map_select_hd, credits_hd, editor_hd] = [
-            "game_status.png",
-            "playersetup.png",
-            "level_selection.png",
-            "horst_evil.png",
-            "map_editor.png",
-        ]
-        .map(|f| load_hd(r, &dir, f));
-        let mut sheet = |name: &str| load_sheet_tex(r, &dir, name);
-        let maptiles = sheet("maptiles.png");
-        let addons = sheet("maptile_addons.png");
-        let bombs = sheet("bombs.png");
-        let extras = sheet("extras2.png");
-        let observer = sheet("observer.png");
-        let cup = sheet("cup2.png");
-        let corpse_parts = sheet("corpse_parts.png");
-        let ps_teams = sheet("ps_teams.png");
-        let team_lamps = sheet("ps_teamlamps.png");
-        let ps_controls = sheet("ps_controls.png");
-        let explosion = sheet("explosion2.png");
-        let mut tex = |name: &str| {
-            let path = dir.join("pics").join(name);
+        let mut pic = |name: &str| load_pic(r, &dir, name);
+        let maptiles = pic("maptiles.png");
+        let addons = pic("maptile_addons.png");
+        let bombs = pic("bombs.png");
+        let extras = pic("extras2.png");
+        let observer = pic("observer.png");
+        let cup = pic("cup2.png");
+        let corpse_parts = pic("corpse_parts.png");
+        let ps_teams = pic("ps_teams.png");
+        let team_lamps = pic("ps_teamlamps.png");
+        let ps_controls = pic("ps_controls.png");
+        let explosion = pic("explosion2.png");
+        // Los fondos pueden tener cualquier tamaño 4:3 (`Renderer::fullscreen`).
+        let status_bg = pic("game_status.png");
+        let title_bg = pic("clanbomber_title_andi.png");
+        let player_setup_bg = pic("playersetup.png");
+        let map_select_bg = pic("level_selection.png");
+        let credits_bg = pic("horst_evil.png");
+        let editor_bg = pic("map_editor.png");
+        let not_available = pic("not_available.png");
+        let cb_logo = pic("cb_logo_small.png");
+        // El logo de Fischlustig (los autores del original) se queda como era, sin filtrar.
+        let fl_logo = {
+            let path = dir.join("pics/fischlustig_logo.png");
             r.load_texture(&path)
                 .unwrap_or_else(|e| panic!("{}: {e}", path.display()))
         };
-        let status_bg = status_hd.unwrap_or_else(|| tex("game_status.png"));
-        let title_bg = title_hd.unwrap_or_else(|| tex("clanbomber_title_andi.png"));
-        let player_setup_bg = player_setup_hd.unwrap_or_else(|| tex("playersetup.png"));
-        let map_select_bg = map_select_hd.unwrap_or_else(|| tex("level_selection.png"));
-        let credits_bg = credits_hd.unwrap_or_else(|| tex("horst_evil.png"));
-        let editor_bg = editor_hd.unwrap_or_else(|| tex("map_editor.png"));
-        let (not_available, cb_logo, fl_logo) = (
-            not_available_hd.unwrap_or_else(|| tex("not_available.png")),
-            cb_logo_hd.unwrap_or_else(|| tex("cb_logo_small.png")),
-            tex("fischlustig_logo.png"),
-        );
 
         let font = |r: &mut Renderer, px: f32| {
             let path = dir.join("fonts/DejaVuSans-Bold.ttf");
@@ -142,30 +110,30 @@ impl Assets {
         let (font_big, font_small) = (font(r, 28.0), font(r, 18.0));
 
         Assets {
-            maptiles: r.sheet_scaled(maptiles.0, 40.0, 40.0, maptiles.1),
-            addons: r.sheet_scaled(addons.0, 40.0, 40.0, addons.1),
-            bombs: r.sheet_scaled(bombs.0, 40.0, 40.0, bombs.1),
-            explosion: r.sheet_scaled(explosion.0, 40.0, 40.0, explosion.1),
-            extras: r.sheet_scaled(extras.0, 40.0, 40.0, extras.1),
+            maptiles: r.sheet_scaled(maptiles, 40.0, 40.0, SCALE),
+            addons: r.sheet_scaled(addons, 40.0, 40.0, SCALE),
+            bombs: r.sheet_scaled(bombs, 40.0, 40.0, SCALE),
+            explosion: r.sheet_scaled(explosion, 40.0, 40.0, SCALE),
+            extras: r.sheet_scaled(extras, 40.0, 40.0, SCALE),
             skins: skin_tex
                 .into_iter()
-                .map(|(t, h, o, scale)| Skin {
-                    sheet: r.sheet_scaled(t, 40.0, h, scale),
+                .map(|(t, h, o)| Skin {
+                    sheet: r.sheet_scaled(t, 40.0, h, SCALE),
                     offset_y: o,
                 })
                 .collect(),
-            observer: r.sheet_scaled(observer.0, 40.0, 40.0, observer.1),
-            cup: r.sheet_scaled(cup.0, 40.0, 40.0, cup.1),
-            corpse_parts: r.sheet_scaled(corpse_parts.0, 40.0, 40.0, corpse_parts.1),
+            observer: r.sheet_scaled(observer, 40.0, 40.0, SCALE),
+            cup: r.sheet_scaled(cup, 40.0, 40.0, SCALE),
+            corpse_parts: r.sheet_scaled(corpse_parts, 40.0, 40.0, SCALE),
             status_bg,
             title_bg,
             player_setup_bg,
             map_select_bg,
             credits_bg,
             editor_bg,
-            ps_teams: r.sheet_scaled(ps_teams.0, 125.0, 56.0, ps_teams.1),
-            ps_controls: r.sheet_scaled(ps_controls.0, 125.0, 56.0, ps_controls.1),
-            team_lamps: r.sheet_scaled(team_lamps.0, 30.0, 32.0, team_lamps.1),
+            ps_teams: r.sheet_scaled(ps_teams, 125.0, 56.0, SCALE),
+            ps_controls: r.sheet_scaled(ps_controls, 125.0, 56.0, SCALE),
+            team_lamps: r.sheet_scaled(team_lamps, 30.0, 32.0, SCALE),
             not_available,
             cb_logo,
             fl_logo,

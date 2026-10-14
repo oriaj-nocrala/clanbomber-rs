@@ -1,4 +1,4 @@
-"""Arma cb_logo_small_hd.png recortando el logo de "Clan Bomber" del fondo HD del marcador (la
+"""Arma cb_logo_small.png recortando el logo de "Clan Bomber" del fondo HD del marcador (la
 imagen de ChatGPT sin comprimir, 1448x1086). El fondo es negro: la transparencia sale del brillo
 (sobre negro se ve igual, y sobre el conejo de los créditos no queda un rectángulo).
 Uso: logo.py <game_status_ia.png> <salida.png>"""

@@ -1,6 +1,6 @@
-"""Arma ps_teams_hd.png (5 celdas de 125x56 en vertical, a 4x) con las lámparas HD: la celda 0 es
+"""Arma ps_teams.png (5 celdas de 125x56 en vertical, a 4x) con las lámparas HD: la celda 0 es
 "sin equipo" (lámparas apagadas y NONE encendido) y la 1..4 enciende la lámpara de ese equipo.
-Posiciones y colores medidos en ps_teams.png.
+Posiciones y colores medidos en el ps_teams.png original (git show 3af9c68:...).
 Uso: teams.py <dir_pics> <fuente.ttf>"""
 import sys
 
@@ -13,7 +13,7 @@ LAMP_X = [14.5, 44.0, 74.0, 104.5]
 LAMP_Y, LAMP = 14.5, 19
 NONE_ON, NONE_OFF = (2, 182, 212), (66, 82, 83)
 
-lamps = Image.open(f"{pics}/ps_teamlamps_hd.png").convert("RGBA")
+lamps = Image.open(f"{pics}/ps_teamlamps.png").convert("RGBA")
 lw, lh = lamps.width // 4, lamps.height
 # Cada lámpara recortada a su contenido y llevada a 19 px.
 cells = []
@@ -45,5 +45,5 @@ for cell in range(5):
     # Letras separadas y centradas en x = 60.5, y = 43 (donde estaba el texto original).
     d.text((60.5 * S, oy + 43 * S), "N O N E", font=font, fill=col + (255,), anchor="mm",
            stroke_width=S, stroke_fill=(0, 0, 0, 255))
-out.save(f"{pics}/ps_teams_hd.png")
+out.save(f"{pics}/ps_teams.png")
 print(out.size)

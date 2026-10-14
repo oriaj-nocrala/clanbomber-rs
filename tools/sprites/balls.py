@@ -101,5 +101,5 @@ for name, args in {
     "green": (0.33, 0.9, 1.05),
 }.items():
     img = sheet if args is None else recolor(*args)
-    img.save(f"{pics}/bomber_dull_{name}_hd.png")
+    img.save(f"{pics}/bomber_dull_{name}.png")
     print(name)

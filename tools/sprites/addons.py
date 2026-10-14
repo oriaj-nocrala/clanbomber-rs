@@ -1,4 +1,4 @@
-"""Arma maptile_addons_hd.png (8 celdas de 160 px: hielo, flechas abajo/izquierda/arriba/derecha,
+"""Arma maptile_addons.png (8 celdas de 160 px: hielo, flechas abajo/izquierda/arriba/derecha,
 ?, X y trampa) a partir de una tira de ChatGPT que ya trae el fondo transparente.
 Uso: addons.py <ia.png> <salida.png> <prev.png>"""
 import sys

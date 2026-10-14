@@ -1,4 +1,4 @@
-"""Arma extras2_hd.png (8 fichas de 160x160) a partir de una tira de ChatGPT con las fichas
+"""Arma extras2.png (8 fichas de 160x160) a partir de una tira de ChatGPT con las fichas
 separadas por una franja verde fina (y a veces con bordes blancos alrededor).
 Uso: extras.py <ia.png> <salida.png>"""
 import sys

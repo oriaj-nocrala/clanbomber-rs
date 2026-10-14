@@ -1,4 +1,4 @@
-"""Arma ps_controls_hd.png (5 celdas de 125x56 en vertical, a 4x: IA, teclados 1-3 y mando) a
+"""Arma ps_controls.png (5 celdas de 125x56 en vertical, a 4x: IA, teclados 1-3 y mando) a
 partir de una columna de ChatGPT sobre fondo magenta.
 Con --fix corrige la generación usada (1024x1536): en el teclado 3 había una tecla azul de más
 (J J K L): la hilera pasa a J K L y donde estaba la L va una tecla normal; y el mando traía

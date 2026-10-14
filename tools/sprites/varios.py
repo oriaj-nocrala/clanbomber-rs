@@ -1,7 +1,7 @@
 """Arma las hojas HD chicas a partir de una grilla de ChatGPT de 4x3 sobre fondo magenta:
 fila 1 observador, reloj, reloj agotado y copa; fila 2 los 4 trozos de cadáver; fila 3 las 4
 lámparas de equipo (rojo, amarillo, azul, verde).
-Salida en <dir_pics>: observer_hd.png, cup2_hd.png, corpse_parts_hd.png, ps_teamlamps_hd.png.
+Salida en <dir_pics>: observer.png, cup2.png, corpse_parts.png, ps_teamlamps.png.
 Uso: varios.py <ia.png> <dir_pics> <prev.png>"""
 import sys
 
@@ -80,7 +80,7 @@ corpse = sheet(sprites[4:8], 40, 40, [27, 32, 39, 39], uniform=False)
 lamps = sheet(sprites[8:12], 30, 32, 21)
 for name, im in [("observer", observer), ("cup2", cup), ("corpse_parts", corpse),
                  ("ps_teamlamps", lamps)]:
-    im.save(f"{pics}/{name}_hd.png")
+    im.save(f"{pics}/{name}.png")
     print(name, im.size)
 
 prev = Image.new("RGBA", (max(observer.width + cup.width, corpse.width, lamps.width), 160 * 3 + 128),
