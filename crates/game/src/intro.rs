@@ -96,9 +96,8 @@ impl Intro {
             return;
         }
         let alpha = (self.alpha / 255.0).clamp(0.0, 1.0);
-        r.sprite_tinted(
+        r.sprite_whole(
             a.fl_logo,
-            [0.0, 0.0, 600.0, 106.0],
             [100.0, 250.0, 600.0, 106.0],
             [1.0, 1.0, 1.0, alpha],
         );

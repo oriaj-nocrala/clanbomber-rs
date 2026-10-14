@@ -95,6 +95,7 @@ impl Assets {
             .collect();
         // Los fondos HD pueden tener cualquier tamaño 4:3 (`Renderer::fullscreen`).
         let title_hd = load_hd(r, &dir, "clanbomber_title_andi.png");
+        let cb_logo_hd = load_hd(r, &dir, "cb_logo_small.png");
         let [status_hd, player_setup_hd, map_select_hd, credits_hd, editor_hd] = [
             "game_status.png",
             "playersetup.png",
@@ -114,12 +115,12 @@ impl Assets {
         let ps_teams = sheet("ps_teams.png");
         let team_lamps = sheet("ps_teamlamps.png");
         let ps_controls = sheet("ps_controls.png");
+        let explosion = sheet("explosion2.png");
         let mut tex = |name: &str| {
             let path = dir.join("pics").join(name);
             r.load_texture(&path)
                 .unwrap_or_else(|e| panic!("{}: {e}", path.display()))
         };
-        let explosion = tex("explosion2.png");
         let status_bg = status_hd.unwrap_or_else(|| tex("game_status.png"));
         let title_bg = title_hd.unwrap_or_else(|| tex("clanbomber_title_andi.png"));
         let player_setup_bg = player_setup_hd.unwrap_or_else(|| tex("playersetup.png"));
@@ -128,7 +129,7 @@ impl Assets {
         let editor_bg = editor_hd.unwrap_or_else(|| tex("map_editor.png"));
         let (not_available, cb_logo, fl_logo) = (
             tex("not_available.png"),
-            tex("cb_logo_small.png"),
+            cb_logo_hd.unwrap_or_else(|| tex("cb_logo_small.png")),
             tex("fischlustig_logo.png"),
         );
 
@@ -143,7 +144,7 @@ impl Assets {
             maptiles: r.sheet_scaled(maptiles.0, 40.0, 40.0, maptiles.1),
             addons: r.sheet_scaled(addons.0, 40.0, 40.0, addons.1),
             bombs: r.sheet_scaled(bombs.0, 40.0, 40.0, bombs.1),
-            explosion: r.sheet(explosion, 40.0, 40.0),
+            explosion: r.sheet_scaled(explosion.0, 40.0, 40.0, explosion.1),
             extras: r.sheet_scaled(extras.0, 40.0, 40.0, extras.1),
             skins: skin_tex
                 .into_iter()

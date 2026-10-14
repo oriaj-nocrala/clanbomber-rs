@@ -37,6 +37,10 @@ originales). Necesitan Python con Pillow, numpy y scipy.
   arregla la generación usada (teclas IJKL y logo de marca del mando).
 - `move_title.py <in> <out> x0 y0 x1 y1 cx cy ancho`: los fondos de 4:3 (1448x1086) van tal
   cual; esto mueve y achica un título brillante que la IA puso encima de los encabezados.
+- `logo.py <game_status_ia.png> <salida.png>`: `cb_logo_small_hd.png` recortado del fondo del
+  marcador, con transparencia según el brillo.
+- `explosion.py <salida.png> [prev.png]`: `explosion2_hd.png` generado por código (no es IA):
+  bandas de fuego con ruido periódico por celda, para que las piezas empalmen.
 - `compress.py <png>...`: 256 colores con libimagequant (~64 % menos, no se nota).
 - `qwen_title.py` / `qwen_edit.py`: mandan trabajos a ComfyUI con Qwen-Image 2.1
   (`~/ai/comfyui-workspace`; lanzar ComfyUI con `--use-split-cross-attention`).

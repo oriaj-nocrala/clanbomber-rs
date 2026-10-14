@@ -687,8 +687,18 @@ impl Renderer {
 
     /// Dibuja la textura entera ocupando toda la pantalla virtual (fondos de cualquier tamaño).
     pub fn fullscreen(&mut self, tex: TextureId) {
+        self.sprite_whole(tex, [0.0, 0.0, VIRTUAL_W, VIRTUAL_H], [1.0; 4]);
+    }
+
+    /// Tamaño en texels de una textura.
+    pub fn texture_size(&self, tex: TextureId) -> (f32, f32) {
+        self.textures[tex.0].size
+    }
+
+    /// La textura entera en `dst`, sea cual sea su tamaño (la original o la HD).
+    pub fn sprite_whole(&mut self, tex: TextureId, dst: [f32; 4], tint: [f32; 4]) {
         let (w, h) = self.textures[tex.0].size;
-        self.sprite(tex, [0.0, 0.0, w, h], [0.0, 0.0, VIRTUAL_W, VIRTUAL_H]);
+        self.sprite_tinted(tex, [0.0, 0.0, w, h], dst, tint);
     }
 
     pub fn sheet(&self, tex: TextureId, cell_w: f32, cell_h: f32) -> Sheet {
