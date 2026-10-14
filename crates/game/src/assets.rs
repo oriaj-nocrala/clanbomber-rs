@@ -89,12 +89,17 @@ impl Assets {
         let title_hd = load_hd(r, &dir, "clanbomber_title_andi.png");
         let bombs_hd = load_hd(r, &dir, "bombs.png");
         let extras_hd = load_hd(r, &dir, "extras2.png");
+        let maptiles_hd = load_hd(r, &dir, "maptiles.png");
         let mut tex = |name: &str| {
             let path = dir.join("pics").join(name);
             r.load_texture(&path)
                 .unwrap_or_else(|e| panic!("{}: {e}", path.display()))
         };
-        let (maptiles, addons) = (tex("maptiles.png"), tex("maptile_addons.png"));
+        let maptiles = match maptiles_hd {
+            Some(t) => (t, HD_SCALE),
+            None => (tex("maptiles.png"), 1.0),
+        };
+        let addons = tex("maptile_addons.png");
         let bombs = match bombs_hd {
             Some(t) => (t, HD_SCALE),
             None => (tex("bombs.png"), 1.0),
@@ -130,7 +135,7 @@ impl Assets {
         let (font_big, font_small) = (font(r, 28.0), font(r, 18.0));
 
         Assets {
-            maptiles: r.sheet(maptiles, 40.0, 40.0),
+            maptiles: r.sheet_scaled(maptiles.0, 40.0, 40.0, maptiles.1),
             addons: r.sheet(addons, 40.0, 40.0),
             bombs: r.sheet_scaled(bombs.0, 40.0, 40.0, bombs.1),
             explosion: r.sheet(explosion, 40.0, 40.0),

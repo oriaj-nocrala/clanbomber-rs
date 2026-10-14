@@ -17,14 +17,15 @@ use crate::draw::{skin_color, speed_level, srgb_rgba, Player};
 /// Esquina del mapa en el lienzo virtual (offset 60, 40 del original).
 const ORIGIN: (f32, f32) = (60.0, 40.0);
 
-/// Color medio de la caja de cada tema de `maptiles.png` (celda `tema * 4 + 2`).
+/// Color de la caja de cada tema de `maptiles_hd.png` (celda `tema * 4 + 2`): la media de sus
+/// píxeles distintos del suelo; la bola de nieve y los ladrillos, a ojo (el suelo se cuela).
 const BOX_COLORS: [(u8, u8, u8); 6] = [
-    (171, 178, 182),
-    (62, 112, 10),
-    (129, 89, 62),
-    (71, 94, 85),
-    (48, 48, 48),
-    (159, 148, 76),
+    (205, 222, 240),
+    (145, 75, 45),
+    (96, 72, 42),
+    (57, 128, 140),
+    (76, 74, 76),
+    (193, 161, 40),
 ];
 
 /// Fuego en color lineal "HDR": por encima de 1, para que el bloom lo recoja.
