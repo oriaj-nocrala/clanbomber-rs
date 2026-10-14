@@ -374,6 +374,27 @@ impl App {
     }
 
     fn menu_key(&mut self, el: &ActiveEventLoop, code: KeyCode) {
+        // En la raíz, el tablero 3D anima la elección antes de entrar.
+        if self.menu.at_root() && self.gfx.is_some() {
+            match self.board.key(code, self.menu.selection()) {
+                menu_board::KeyAction::Pass => {}
+                menu_board::KeyAction::Lit => {
+                    self.audio.play(Sfx::PutBomb);
+                    return;
+                }
+                menu_board::KeyAction::Consumed => return,
+                menu_board::KeyAction::Finish => {
+                    self.menu_apply_key(el, KeyCode::Enter);
+                    if matches!(code, KeyCode::Enter | KeyCode::NumpadEnter) {
+                        return;
+                    }
+                }
+            }
+        }
+        self.menu_apply_key(el, code);
+    }
+
+    fn menu_apply_key(&mut self, el: &ActiveEventLoop, code: KeyCode) {
         let at_root = self.menu.at_root();
         let outcome = self.menu.key(code);
         match (&outcome, code) {
@@ -617,8 +638,17 @@ impl ApplicationHandler for App {
                     }
                     Screen::Menu => {
                         self.acc = 0.0;
-                        if let Some((_, r)) = self.gfx.as_mut().filter(|_| self.menu.at_root()) {
-                            self.board.update(r, frame as f32, self.menu.selection());
+                        let at_root = self.menu.at_root();
+                        let event = self.gfx.as_mut().and_then(|(_, r)| {
+                            self.board
+                                .update(r, frame as f32, self.menu.selection(), at_root)
+                        });
+                        match event {
+                            Some(menu_board::Event::Exploded) => self.audio.play(Sfx::Explode),
+                            Some(menu_board::Event::Enter) => {
+                                self.menu_apply_key(el, KeyCode::Enter)
+                            }
+                            None => {}
                         }
                     }
                     _ => self.acc = 0.0,
@@ -681,13 +711,19 @@ impl ApplicationHandler for App {
                                 a,
                                 &self.menu.labels(),
                                 self.menu.selection(),
-                                self.config.theme.clamp(0, 5) as u32,
-                                skin,
+                                menu_board::Look {
+                                    theme: self.config.theme.clamp(0, 5) as u32,
+                                    skin,
+                                    fire_shader: self.video.fire,
+                                    shockwaves: self.video.shockwaves,
+                                    shake: self.config.shaky_explosions,
+                                },
                             );
                             r.render();
                         }
                         _ => {
                             self.menu.draw(r, a);
+                            self.board.draw_flash(r);
                             r.render();
                         }
                     }

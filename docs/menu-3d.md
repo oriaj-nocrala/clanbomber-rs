@@ -1,7 +1,8 @@
 # Handoff: menú principal como tablero 3D ("el menú es una partida")
 
-Estado: idea aprobada por el usuario y maqueta hecha con ChatGPT (`docs/menu-3d-maqueta.png`,
-**mírala primero**). No hay código todavía. Trabajar en una rama nueva `menu-3d` desde `main`.
+Estado: fases 1 y 2 hechas en la rama `menu-3d` (`cb-render/board3d.rs`, `cb-game/menu_board.rs`,
+caras de los cubos en `assets/pics/maptiles_cubes.png`). Falta la fase 3. Maqueta:
+`docs/menu-3d-maqueta.png`.
 
 ## La idea
 
