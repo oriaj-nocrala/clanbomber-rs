@@ -456,9 +456,15 @@ impl Menu {
                 }
             }
             KeyCode::Escape => {
+                // Al subir queda seleccionada la entrada de la que se venía.
                 if let Some(parent) = self.items[self.current].parent {
+                    let from = self.current;
                     self.current = parent;
-                    self.selection = 0;
+                    self.selection = self.items[parent]
+                        .children
+                        .iter()
+                        .position(|&c| c == from)
+                        .unwrap_or(0);
                 }
             }
             _ => {}
@@ -572,6 +578,21 @@ mod tests {
         m.key(KeyCode::ArrowLeft);
         assert_eq!(m.selection(), 1);
         assert_eq!(m.labels()[1], "Options");
+    }
+
+    #[test]
+    fn escape_selects_the_submenu_it_came_from() {
+        let c = Config::default();
+        let mut m = Menu::new(&c);
+        m.key(KeyCode::ArrowRight);
+        m.key(KeyCode::Enter); // Options
+        m.key(KeyCode::ArrowDown);
+        m.key(KeyCode::Enter); // Enable/Disable Extras
+        m.key(KeyCode::Escape);
+        assert_eq!(m.selection(), 1, "Enable/Disable Extras");
+        m.key(KeyCode::Escape);
+        assert!(m.at_root());
+        assert_eq!(m.selection(), 1, "Options");
     }
 
     #[test]
