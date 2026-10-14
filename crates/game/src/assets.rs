@@ -90,6 +90,7 @@ impl Assets {
         let bombs_hd = load_hd(r, &dir, "bombs.png");
         let extras_hd = load_hd(r, &dir, "extras2.png");
         let maptiles_hd = load_hd(r, &dir, "maptiles.png");
+        let addons_hd = load_hd(r, &dir, "maptile_addons.png");
         let mut tex = |name: &str| {
             let path = dir.join("pics").join(name);
             r.load_texture(&path)
@@ -99,7 +100,10 @@ impl Assets {
             Some(t) => (t, HD_SCALE),
             None => (tex("maptiles.png"), 1.0),
         };
-        let addons = tex("maptile_addons.png");
+        let addons = match addons_hd {
+            Some(t) => (t, HD_SCALE),
+            None => (tex("maptile_addons.png"), 1.0),
+        };
         let bombs = match bombs_hd {
             Some(t) => (t, HD_SCALE),
             None => (tex("bombs.png"), 1.0),
@@ -136,7 +140,7 @@ impl Assets {
 
         Assets {
             maptiles: r.sheet_scaled(maptiles.0, 40.0, 40.0, maptiles.1),
-            addons: r.sheet(addons, 40.0, 40.0),
+            addons: r.sheet_scaled(addons.0, 40.0, 40.0, addons.1),
             bombs: r.sheet_scaled(bombs.0, 40.0, 40.0, bombs.1),
             explosion: r.sheet(explosion, 40.0, 40.0),
             extras: r.sheet_scaled(extras.0, 40.0, 40.0, extras.1),
