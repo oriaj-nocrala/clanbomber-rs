@@ -88,6 +88,7 @@ impl Assets {
         // El fondo del título HD puede tener cualquier tamaño 4:3 (`Renderer::fullscreen`).
         let title_hd = load_hd(r, &dir, "clanbomber_title_andi.png");
         let bombs_hd = load_hd(r, &dir, "bombs.png");
+        let extras_hd = load_hd(r, &dir, "extras2.png");
         let mut tex = |name: &str| {
             let path = dir.join("pics").join(name);
             r.load_texture(&path)
@@ -98,7 +99,11 @@ impl Assets {
             Some(t) => (t, HD_SCALE),
             None => (tex("bombs.png"), 1.0),
         };
-        let (explosion, extras) = (tex("explosion2.png"), tex("extras2.png"));
+        let extras = match extras_hd {
+            Some(t) => (t, HD_SCALE),
+            None => (tex("extras2.png"), 1.0),
+        };
+        let explosion = tex("explosion2.png");
         let (observer, cup) = (tex("observer.png"), tex("cup2.png"));
         let corpse_parts = tex("corpse_parts.png");
         let status_bg = tex("game_status.png");
@@ -129,7 +134,7 @@ impl Assets {
             addons: r.sheet(addons, 40.0, 40.0),
             bombs: r.sheet_scaled(bombs.0, 40.0, 40.0, bombs.1),
             explosion: r.sheet(explosion, 40.0, 40.0),
-            extras: r.sheet(extras, 40.0, 40.0),
+            extras: r.sheet_scaled(extras.0, 40.0, 40.0, extras.1),
             skins: skin_tex
                 .into_iter()
                 .map(|(t, h, o, scale)| Skin {

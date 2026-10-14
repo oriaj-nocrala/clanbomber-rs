@@ -17,6 +17,8 @@ struct Shard {
     source: Source,
     /// Región del sprite (px de la textura).
     src: [f32; 4],
+    /// Tamaño en pantalla (px virtuales): con hojas HD no coincide con el de `src`.
+    size: [f32; 2],
     /// Posición en el suelo (centro, px virtuales) y altura.
     x: f32,
     y: f32,
@@ -72,12 +74,16 @@ impl Shards {
     pub fn shatter(&mut self, source: Source, sheet: &Sheet, cell: u32, origin: [f32; 2], n: u32) {
         let base = sheet.cell(cell);
         let (pw, ph) = (base[2] / n as f32, base[3] / n as f32);
-        let (cx, cy) = (origin[0] + base[2] / 2.0, origin[1] + base[3] / 2.0);
+        let (sw, sh) = (sheet.cell_w / n as f32, sheet.cell_h / n as f32);
+        let (cx, cy) = (
+            origin[0] + sheet.cell_w / 2.0,
+            origin[1] + sheet.cell_h / 2.0,
+        );
         for j in 0..n {
             for i in 0..n {
                 let (x, y) = (
-                    origin[0] + (i as f32 + 0.5) * pw,
-                    origin[1] + (j as f32 + 0.5) * ph,
+                    origin[0] + (i as f32 + 0.5) * sw,
+                    origin[1] + (j as f32 + 0.5) * sh,
                 );
                 // Hacia fuera desde el centro, con algo de azar.
                 let (dx, dy) = (x - cx, y - cy);
@@ -90,6 +96,7 @@ impl Shards {
                 self.shards.push(Shard {
                     source,
                     src: [base[0] + i as f32 * pw, base[1] + j as f32 * ph, pw, ph],
+                    size: [sw, sh],
                     x,
                     y,
                     z: 0.0,
@@ -152,9 +159,9 @@ impl Shards {
             // Sombra: más pequeña y tenue cuanto más alto está el trozo.
             let k = (1.0 - s.z / 80.0).clamp(0.3, 1.0);
             r.quad(
-                s.x - s.src[2] * 0.4 * k,
-                s.y + s.src[3] * 0.3,
-                s.src[2] * 0.8 * k,
+                s.x - s.size[0] * 0.4 * k,
+                s.y + s.size[1] * 0.3,
+                s.size[0] * 0.8 * k,
                 2.0,
                 [0.0, 0.0, 0.0, 0.35 * k * fade],
             );
@@ -166,7 +173,7 @@ impl Shards {
                 sheet.tex,
                 s.src,
                 [s.x, s.y - s.z],
-                [s.src[2], s.src[3]],
+                s.size,
                 s.angle,
                 [1.0, 1.0, 1.0, fade],
             );
