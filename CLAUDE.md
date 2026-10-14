@@ -66,7 +66,9 @@ cargo fmt
   (opciones de `Config`, guardadas al cambiar); `intro.rs`, `player_setup.rs`, `map_select.rs`, `map_editor.rs`, `credits.rs` y `help.rs`
   son las demás pantallas de menú (`screen.rs`: `Flow` y `TextEdit`). Pantallas: menú ⇄ partida (Esc vuelve al menú; Espacio pasa
   del marcador a la siguiente ronda).
-- `assets/maps`, `assets/pics`: copiados del fork de referencia (ver abajo).
+- `assets/maps`, `assets/pics`: copiados del fork de referencia (ver abajo). Las versiones
+  `<original>_hd.png` están redibujadas con IA (4x; `assets.rs::load_hd`, `CB_SD=1` las desactiva);
+  los scripts para hacerlas están en `tools/sprites` (ver su README).
 
 ## Referencia: el original
 
