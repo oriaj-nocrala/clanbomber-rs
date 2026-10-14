@@ -58,6 +58,20 @@ fn load_hd(r: &mut Renderer, dir: &std::path::Path, name: &str) -> Option<Textur
     r.load_texture_smooth(path).ok()
 }
 
+/// Textura de una hoja de sprites y su escala: la HD si la hay, si no la original.
+fn load_sheet_tex(r: &mut Renderer, dir: &std::path::Path, name: &str) -> (TextureId, f32) {
+    match load_hd(r, dir, name) {
+        Some(t) => (t, HD_SCALE),
+        None => {
+            let path = dir.join("pics").join(name);
+            let t = r
+                .load_texture(&path)
+                .unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+            (t, 1.0)
+        }
+    }
+}
+
 impl Assets {
     pub fn load(r: &mut Renderer) -> Assets {
         let dir = crate::paths::assets_dir();
@@ -74,47 +88,29 @@ impl Assets {
         ];
         let skin_tex: Vec<_> = skin_files
             .iter()
-            .map(|(f, h, o)| match load_hd(r, &dir, f) {
-                Some(t) => (t, *h, *o, HD_SCALE),
-                None => {
-                    let path = dir.join("pics").join(f);
-                    let t = r
-                        .load_texture(&path)
-                        .unwrap_or_else(|e| panic!("{}: {e}", path.display()));
-                    (t, *h, *o, 1.0)
-                }
+            .map(|(f, h, o)| {
+                let (t, scale) = load_sheet_tex(r, &dir, f);
+                (t, *h, *o, scale)
             })
             .collect();
         // El fondo del título HD puede tener cualquier tamaño 4:3 (`Renderer::fullscreen`).
         let title_hd = load_hd(r, &dir, "clanbomber_title_andi.png");
-        let bombs_hd = load_hd(r, &dir, "bombs.png");
-        let extras_hd = load_hd(r, &dir, "extras2.png");
-        let maptiles_hd = load_hd(r, &dir, "maptiles.png");
-        let addons_hd = load_hd(r, &dir, "maptile_addons.png");
+        let mut sheet = |name: &str| load_sheet_tex(r, &dir, name);
+        let maptiles = sheet("maptiles.png");
+        let addons = sheet("maptile_addons.png");
+        let bombs = sheet("bombs.png");
+        let extras = sheet("extras2.png");
+        let observer = sheet("observer.png");
+        let cup = sheet("cup2.png");
+        let corpse_parts = sheet("corpse_parts.png");
+        let ps_teams = sheet("ps_teams.png");
+        let team_lamps = sheet("ps_teamlamps.png");
         let mut tex = |name: &str| {
             let path = dir.join("pics").join(name);
             r.load_texture(&path)
                 .unwrap_or_else(|e| panic!("{}: {e}", path.display()))
         };
-        let maptiles = match maptiles_hd {
-            Some(t) => (t, HD_SCALE),
-            None => (tex("maptiles.png"), 1.0),
-        };
-        let addons = match addons_hd {
-            Some(t) => (t, HD_SCALE),
-            None => (tex("maptile_addons.png"), 1.0),
-        };
-        let bombs = match bombs_hd {
-            Some(t) => (t, HD_SCALE),
-            None => (tex("bombs.png"), 1.0),
-        };
-        let extras = match extras_hd {
-            Some(t) => (t, HD_SCALE),
-            None => (tex("extras2.png"), 1.0),
-        };
         let explosion = tex("explosion2.png");
-        let (observer, cup) = (tex("observer.png"), tex("cup2.png"));
-        let corpse_parts = tex("corpse_parts.png");
         let status_bg = tex("game_status.png");
         let title_bg = title_hd.unwrap_or_else(|| tex("clanbomber_title_andi.png"));
         let (player_setup_bg, map_select_bg, credits_bg) = (
@@ -123,8 +119,7 @@ impl Assets {
             tex("horst_evil.png"),
         );
         let editor_bg = tex("map_editor.png");
-        let (ps_teams, ps_controls) = (tex("ps_teams.png"), tex("ps_controls.png"));
-        let team_lamps = tex("ps_teamlamps.png");
+        let ps_controls = tex("ps_controls.png");
         let (not_available, cb_logo, fl_logo) = (
             tex("not_available.png"),
             tex("cb_logo_small.png"),
@@ -151,18 +146,18 @@ impl Assets {
                     offset_y: o,
                 })
                 .collect(),
-            observer: r.sheet(observer, 40.0, 40.0),
-            cup: r.sheet(cup, 40.0, 40.0),
-            corpse_parts: r.sheet(corpse_parts, 40.0, 40.0),
+            observer: r.sheet_scaled(observer.0, 40.0, 40.0, observer.1),
+            cup: r.sheet_scaled(cup.0, 40.0, 40.0, cup.1),
+            corpse_parts: r.sheet_scaled(corpse_parts.0, 40.0, 40.0, corpse_parts.1),
             status_bg,
             title_bg,
             player_setup_bg,
             map_select_bg,
             credits_bg,
             editor_bg,
-            ps_teams: r.sheet(ps_teams, 125.0, 56.0),
+            ps_teams: r.sheet_scaled(ps_teams.0, 125.0, 56.0, ps_teams.1),
             ps_controls: r.sheet(ps_controls, 125.0, 56.0),
-            team_lamps: r.sheet(team_lamps, 30.0, 32.0),
+            team_lamps: r.sheet_scaled(team_lamps.0, 30.0, 32.0, team_lamps.1),
             not_available,
             cb_logo,
             fl_logo,
