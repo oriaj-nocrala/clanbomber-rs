@@ -37,7 +37,9 @@ pub struct Sparks {
     explosions: Vec<(i32, i32, usize)>,
     crumbling: Vec<(usize, usize)>,
     vanishing: Vec<(usize, usize)>,
-    dead: Vec<bool>,
+    /// Por bomber: si estaba muerto y dónde estaba en el fotograma anterior (`Bomber::die` lo
+    /// lleva a (0, 0), como `Bomber.cpp`, así que la sangre sale de la posición previa).
+    bombers: Vec<(bool, i32, i32)>,
     /// Extras en el suelo del fotograma anterior: tipo, posición y si estaba ardiendo.
     extras: Vec<(ExtraKind, i32, i32, bool)>,
     /// Trozos con textura y extras recogidos (se dibujan en `draw`).
@@ -88,7 +90,11 @@ impl Sparks {
         let explosions: Vec<_> = w.explosions().map(|e| (e.tx, e.ty, e.owner)).collect();
         let crumbling: Vec<_> = w.map.crumbling.iter().map(|c| (c.x, c.y)).collect();
         let vanishing: Vec<_> = w.map.vanishing.iter().map(|v| (v.x, v.y)).collect();
-        let dead: Vec<_> = w.bombers.iter().map(|b| b.dead).collect();
+        let bombers: Vec<_> = w
+            .bombers
+            .iter()
+            .map(|b| (b.dead, b.get_x(), b.get_y()))
+            .collect();
 
         if self.tracking && dt > 0.0 {
             for e in w.explosions() {
@@ -121,11 +127,11 @@ impl Sparks {
                 }
             }
             for (i, b) in w.bombers.iter().enumerate() {
-                if b.dead && !self.dead.get(i).copied().unwrap_or(true) {
-                    let pos = [
-                        ORIGIN.0 + b.get_x() as f32 + 20.0,
-                        ORIGIN.1 + b.get_y() as f32 + 20.0,
-                    ];
+                let Some(&(was_dead, x, y)) = self.bombers.get(i) else {
+                    continue;
+                };
+                if b.dead && !was_dead {
+                    let pos = [ORIGIN.0 + x as f32 + 20.0, ORIGIN.1 + y as f32 + 20.0];
                     death(r, pos, w.config.kids_mode);
                 }
             }
@@ -138,7 +144,7 @@ impl Sparks {
         self.explosions = explosions;
         self.crumbling = crumbling;
         self.vanishing = vanishing;
-        self.dead = dead;
+        self.bombers = bombers;
         self.extras = extras;
     }
 
